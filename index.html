@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#080d18"><meta name="description" content="Outpost Selene — a live lunar outpost survival game.">
+<title>OUTPOST SELENE v2.1 | Lunar Survival Operations</title>
+</head>
+<body>
+<main id="landing-screen" class="launch-screen">
+  <div class="launch-stars"></div><div class="launch-planet launch-earth"></div><div class="launch-planet launch-mars"></div><div class="launch-horizon"></div>
+  <div class="launch-nav"><div class="brand"><div class="brand-emblem"><span></span><i></i></div><div class="brand-copy"><b>OUTPOST <strong>SELENE</strong></b><small>LUNAR SURVIVAL OPERATIONS</small></div></div><span class="launch-status"><i></i> MISSION CONTROL READY</span></div>
+  <section class="launch-content">
+    <div class="launch-copy"><div class="launch-eyebrow"><span></span> A SURVIVAL SIMULATION · EXPEDITION SEL-07</div>
+      <h1>THE MOON IS<br><em>NOT</em> FORGIVING.</h1>
+      <p>Four crew. Limited power. One outpost. Read the sky, balance every watt, and get your people through the mission.</p>
+      <div class="launch-facts"><div><b>04</b><small>CREW MEMBERS</small></div><div><b>48 <small>kWh</small></b><small>BATTERY CAPACITY</small></div><div><b>T−30h</b><small>FIRST MAJOR HAZARD</small></div></div>
+      <div class="launch-actions"><button id="guest-start" class="launch-primary">PLAY AS GUEST <span>→</span></button><button id="show-signin" class="launch-secondary">SIGN IN</button><button id="show-create" class="launch-secondary">CREATE ACCOUNT</button></div>
+      <div class="launch-note"><span>◈</span> Guest missions are session-only. Progress is never saved in guest mode.</div>
+    </div>
+    <aside class="launch-side"><div class="launch-panel-head"><div><small>MISSION CONFIGURATION</small><b>Prepare your expedition</b></div><span class="launch-live-dot"></span></div>
+      <label for="landing-duration">MISSION LENGTH</label><select id="landing-duration"><option value="7">07 DAYS · CADET</option><option value="14">14 DAYS · SPECIALIST</option><option value="30">30 DAYS · COMMANDER</option></select>
+      <div class="launch-mini-title">WHAT YOU'LL MANAGE</div><div class="launch-system"><i class="system-icon power">ϟ</i><span><b>Power grid</b><small>Generate, store, and budget energy</small></span></div>
+      <div class="launch-system"><i class="system-icon life">◌</i><span><b>Life support</b><small>Oxygen, water, food, and crew health</small></span></div>
+      <div class="launch-system"><i class="system-icon storm">⚠</i><span><b>Hazard response</b><small>Storm warnings and radiation alerts</small></span></div>
+      <div class="launch-disclaimer">EDUCATIONAL SIMULATION · Lunar hazards are simplified for gameplay. Real lunar surface conditions differ from this fictional scenario.</div>
+    </aside>
+  </section>
+  <div class="launch-footer"><span>OUTPOST SELENE / FLIGHT SYSTEMS v2.1</span><span>POWER IS TIME. TIME IS SURVIVAL.</span></div>
+  <section id="auth-panel" class="auth-panel hidden" aria-modal="true" role="dialog" aria-labelledby="auth-title">
+    <button id="auth-close" class="auth-close" aria-label="Close sign in">×</button><div class="section-kicker" id="auth-kicker">ACCOUNT ACCESS</div><h2 id="auth-title">Welcome back, commander.</h2><p id="auth-copy">Sign in to access this browser's saved mission.</p>
+    <form id="auth-form"><label for="auth-email">EMAIL</label><input id="auth-email" type="email" autocomplete="email" required placeholder="commander@example.com"><label for="auth-password">PASSWORD</label><input id="auth-password" type="password" autocomplete="current-password" required minlength="8" placeholder="At least 8 characters"><div id="confirm-wrap" class="hidden"><label for="auth-confirm">CONFIRM PASSWORD</label><input id="auth-confirm" type="password" autocomplete="new-password" minlength="8" placeholder="Repeat password"></div><button class="launch-primary auth-submit" type="submit" id="auth-submit">SIGN IN <span>→</span></button></form>
+    <p class="auth-local-note">Local account mode: accounts and saves stay in this browser. This build has no remote authentication server yet.</p><div id="auth-error" class="auth-error hidden" role="alert"></div>
+  </section>
+</main>
+<div id="game-shell" class="game-shell hidden">
+<header class="topbar">
+  <div class="brand"><div class="brand-emblem"><span></span><i></i></div><div class="brand-copy"><b>OUTPOST <strong>SELENE</strong></b><small>LUNAR SURVIVAL OPERATIONS</small></div></div>
+  <div class="top-center"><span class="live-dot"></span><span id="top-status">OUTPOST ONLINE</span><i class="top-sep"></i><b id="top-clock">SOL 01 · 06:00</b><i class="top-sep"></i><span class="session-label" id="session-label">GUEST · SESSION ONLY</span></div>
+  <div class="top-actions">
+    <button class="top-btn" id="briefing-open" title="Mission briefing">▤ <span>Briefing</span></button>
+    <button class="top-btn" id="inspect-toggle" title="Inspect mission systems">⌄ <span>Inspect</span></button>
+    <button class="top-btn audio-btn" id="audio-toggle" title="Toggle ambient audio">♫ <span>Audio Off</span></button>
+    <button class="top-btn" id="save-button">↓ <span>Save</span></button><button class="top-btn" id="load-button">↑ <span>Load</span></button>
+    <button class="top-btn icon-only" id="settings-open" title="Settings">⚙</button>
+  </div>
+  <div id="inspect-menu" class="inspect-menu hidden">
+    <button data-modal="briefing">Mission briefing <small>Crew, supplies, mission rules</small></button>
+    <button data-modal="manual">Field guide / menu book <small>Power, rooms, hazards, controls</small></button>
+    <button data-modal="weather">Weather & forecast <small>Storm timing and risks</small></button>
+    <button data-modal="crew">Crew roster <small>Health, fatigue and roles</small></button>
+    <button data-modal="log">Mission log <small>Every action and system event</small></button>
+    <button data-modal="objectives">Mission objectives <small>Survival checklist</small></button>
+    <button data-modal="settings">Game settings <small>Mission length, sound, restart</small></button>
+    <button id="return-home">Return to main menu <small>End this session and return home</small></button>
+  </div>
+</header>
+<main class="game-layout">
+  <aside class="sidebar">
+    <div class="side-label">COMMAND</div>
+    <button class="nav-item active" data-room="engineering"><span class="nav-icon">ϟ</span><span>Engineering</span><i></i></button>
+    <button class="nav-item" data-room="life-support"><span class="nav-icon">◌</span><span>Life support</span><i></i></button>
+    <button class="nav-item" data-room="greenhouse"><span class="nav-icon">✿</span><span>Greenhouse</span><i></i></button>
+    <button class="nav-item" data-room="crew"><span class="nav-icon">♧</span><span>Crew quarters</span><i></i></button>
+    <button class="nav-item" data-room="rover"><span class="nav-icon">⌖</span><span>Rover bay</span><i></i></button>
+    <button class="nav-item" data-room="research"><span class="nav-icon">◇</span><span>Research lab</span><i></i></button>
+    <div class="side-rule"></div><div class="side-label">INTELLIGENCE</div>
+    <button class="nav-item" data-room="weather"><span class="nav-icon">☷</span><span>Weather</span><i></i></button>
+    <button class="nav-item" data-room="objectives"><span class="nav-icon">☑</span><span>Objectives</span><i></i></button>
+    <div class="sidebar-bottom"><div class="crew-mini"><span class="crew-dot"></span><div><b>CREW LINK</b><small id="crew-link-text">4 VITAL SIGNS NOMINAL</small></div></div><button class="help-button" id="help-open">? <span>Field guide</span></button></div>
+  </aside>
+  <section class="stage" id="stage">
+    <canvas id="world-canvas" aria-label="Live 3D lunar outpost simulation"></canvas><div class="stage-vignette"></div>
+    <div class="stage-top-left"><div class="scene-tag"><span class="scene-tag-dot"></span><span id="scene-mode">EXTERIOR · SECTOR SEL-07</span></div><div class="scene-subtitle" id="scene-subtitle">LUNAR SOUTH POLE · HABITAT ZONE</div></div>
+    <div class="stage-top-right">
+      <div class="mini-weather" id="mini-weather"><span class="weather-glyph">☼</span><div><b id="weather-main">CLEAR SKY</b><small id="weather-sub">STORM FRONT T−30H</small></div></div>
+      <div class="battery-chip"><span>ϟ</span><b id="stage-power">28.0</b><small>kWh</small></div>
+    </div>
+    <div class="scene-reticle"><span></span><i></i></div>
+    <div class="stage-left-readout"><div class="readout-label">OUTPOST TELEMETRY</div><div><span>ARRAY</span><b id="readout-array">STOWED</b></div><div><span>SHIELD</span><b id="readout-shield">STANDBY</b></div><div><span>O₂ GEN</span><b id="readout-oxygen">OFFLINE</b></div><div><span>ROVER</span><b id="readout-rover">DOCKED</b></div></div>
+    <div class="stage-bottom-left"><div class="scene-event-icon" id="scene-event-icon">◈</div><div><small id="scene-event-kicker">SYSTEM READY</small><b id="scene-event-title">Awaiting command</b><p id="scene-event-detail">Select a room or operate the outpost controls.</p></div></div>
+    <div class="stage-bottom-right"><span class="camera-status"><i></i> LIVE FEED</span><span class="tiny-coord">68.2°S · 31.8°E</span></div>
+    <section class="activity-hud" id="activity-hud"><div class="activity-hud-head"><span id="activity-hud-icon">ϟ</span><div><small id="activity-hud-kicker">ENGINEERING TELEMETRY</small><b id="activity-hud-title">Power systems</b></div></div><div class="activity-hud-metrics" id="activity-hud-metrics"></div><div class="activity-hud-note" id="activity-hud-note">Deploy the array to begin charging.</div></section><div class="stage-action-flash" id="stage-action-flash"></div><button class="stage-expand" id="scene-inspect" title="Inspect environment">⌖ <span>Inspect scene</span></button>
+  </section>
+  <aside class="control-rail" id="control-rail">
+    <div class="rail-head"><div><div class="section-kicker" id="rail-kicker">ROOM 03 / ELECTRICAL SYSTEMS</div><h1 id="rail-title">Engineering & Power</h1></div><span class="room-live"><i></i> LIVE</span></div>
+    <p class="rail-description" id="rail-description">Deploy the solar array, activate generation, and manage the battery budget before the storm.</p>
+    <div class="rail-status-row"><span id="rail-status-label">ARRAY STATUS</span><b id="rail-status-value">STOWED / OFFLINE</b></div>
+    <div class="action-list" id="action-list"></div>
+    <section id="power-plan-card" class="power-plan-card"></section>
+    <div class="rail-bottom"><div class="next-step"><span class="next-step-icon">✦</span><div><b id="hint-title">FIRST PRIORITY</b><small id="hint-text">Deploy the array, then activate solar generation.</small></div></div>
+      <div class="time-control"><div class="time-control-head"><span>ADVANCE SIMULATION</span><small>TIME IS YOUR RESOURCE</small></div><div class="time-buttons"><button data-advance="1">+1H</button><button data-advance="3">+3H</button><button class="time-primary" data-advance="6">+6H <span>→</span></button></div></div>
+    </div>
+  </aside>
+  <button class="mobile-ops" id="mobile-ops">☷ OPERATIONS</button>
+</main>
+<footer class="hud">
+  <div class="hud-resource power-resource"><div class="hud-icon">ϟ</div><div class="hud-content"><div class="hud-label"><span>POWER RESERVE</span><b id="power-percent">58%</b></div><div class="hud-meter"><i id="power-meter"></i></div><div class="hud-value"><b id="power-value">28.0</b><small>/ 48 kWh</small></div><div class="hud-sub" id="power-sub">28 kWh stored · 24/day max solar</div></div></div>
+  <div class="hud-resource"><div class="hud-icon oxygen-icon">◌</div><div class="hud-content"><div class="hud-label"><span>OXYGEN</span><b id="oxygen-percent">83%</b></div><div class="hud-meter"><i id="oxygen-meter"></i></div><div class="hud-value"><b id="oxygen-value">10.0</b><small>units</small></div></div></div>
+  <div class="hud-resource"><div class="hud-icon water-icon">≈</div><div class="hud-content"><div class="hud-label"><span>WATER</span><b id="water-percent">60%</b></div><div class="hud-meter"><i id="water-meter"></i></div><div class="hud-value"><b id="water-value">24.0</b><small>units</small></div></div></div>
+  <div class="hud-resource"><div class="hud-icon food-icon">✿</div><div class="hud-content"><div class="hud-label"><span>FOOD</span><b id="food-percent">70%</b></div><div class="hud-meter"><i id="food-meter"></i></div><div class="hud-value"><b id="food-value">28.0</b><small>rations</small></div></div></div>
+  <div class="hud-resource material-resource"><div class="hud-icon material-icon">⬡</div><div class="hud-content"><div class="hud-label"><span>MATERIALS</span><b id="materials-label">STOCK</b></div><div class="hud-value"><b id="materials-value">5</b><small>units</small></div><div class="hud-sub" id="samples-value">0 research samples</div></div></div>
+  <div class="hud-mission"><div class="hud-mission-top"><span class="mission-mark">◉</span><div><small>MISSION ELAPSED</small><b id="hud-clock">SOL 01 · 06:00</b></div></div><div class="mission-progress"><i id="mission-progress"></i></div><div class="hud-mission-bottom"><span id="mission-day-label">DAY 1 OF 7</span><b id="crew-health-label">CREW 100%</b></div></div>
+</footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="modal-backdrop hidden" id="modal-backdrop"><section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-top"><div><div class="section-kicker" id="modal-kicker">MISSION CONTROL</div><h2 id="modal-title">Mission briefing</h2></div><button class="modal-close" id="modal-close" aria-label="Close">×</button></div>
+  <div id="modal-content" class="modal-content"></div><div class="modal-footer" id="modal-footer"></div>
+</section></div>
+<div class="event-overlay hidden" id="event-overlay"><div class="event-card">
+  <div class="event-top"><span class="event-signal">!</span><div><div class="section-kicker" id="event-kicker">MISSION CONTROL ALERT</div><h2 id="event-title">Storm warning</h2></div></div>
+  <p id="event-body"></p><div class="event-details" id="event-details"></div><div class="event-actions" id="event-actions"></div>
+</div></div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

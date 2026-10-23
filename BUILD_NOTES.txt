@@ -1,0 +1,14 @@
+OUTPOST SELENE v2.1
+- Mandatory main home page restored: Play as Guest / Sign In / Create Account.
+- Guest missions are session-only and cannot Save/Load.
+- Local browser account demo flow with per-account local mission saves; no cloud authentication.
+- Fixed live game viewport and no page-level scrolling.
+- Room-specific camera views and live activity telemetry.
+- Live power plan: storage, daily input/output, reserve target, storm shield costs.
+- Separate dust-front gameplay hazard and solar-particle radiation event.
+- Radiation shelter actions and visual radiation field.
+- Animated crew models, Sun, Earth, Venus, Mars and Saturn.
+- In-game Field Guide / Menu Book; separate PDF field guide is distributed with the ZIP.
+- Procedural audio via Web Audio API.
+- `node --check` passes for src/main.js, src/game.js and src/scene.js.
+- Full Vite build could not run in authoring environment due npm registry timeout.
