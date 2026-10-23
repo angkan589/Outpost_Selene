@@ -276,8 +276,8 @@ export function createLunarScene(canvas) {
     ventGlow.intensity = state.oxygenGenerator ? 1.4 : 0; recyclerLight.intensity = state.recyclerOn ? 1.25 : 0;
     beaconLight.intensity = state.researchBonus ? 2.5 : 1.2;
     shieldMat.opacity = state.shieldActive ? .2 : 0; shieldGlow.intensity = state.shieldActive ? 1.8 : 0; shieldMat.color.setHex(state.shieldHealth < 40 ? 0xff9a71 : 0x58ddff);
-    radiationFieldMat.opacity = state.radiation?.active ? .14 : (!state.radiation?.passed && state.radiation?.eta < 12 ? .035 : 0);
-    radiationRayMat.opacity = state.radiation?.active ? .34 : (!state.radiation?.passed && state.radiation?.eta < 6 ? .09 : 0);
+    radiationFieldMat.opacity = state.radiation?.active ? .14 : (!state.radiation?.passed && state.radiation?.eta < 24 ? .035 : 0);
+    radiationRayMat.opacity = state.radiation?.active ? .34 : (!state.radiation?.passed && state.radiation?.eta < 12 ? .09 : 0);
     radiationGlow.intensity = state.radiation?.active ? 1.5 : 0;
     roverTarget.set(state.roverOut ? 8.1 : 2.7, 0, state.roverOut ? -2.7 : 2.2); headlamp.intensity = state.roverOut ? 1.8 : 0;
     crewActors.forEach((actor, i) => {
