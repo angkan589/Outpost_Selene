@@ -11,7 +11,7 @@
   <div class="launch-nav"><div class="brand"><div class="brand-emblem"><span></span><i></i></div><div class="brand-copy"><b>OUTPOST <strong>SELENE</strong></b><small>LUNAR SURVIVAL OPERATIONS</small></div></div><span class="launch-status"><i></i> MISSION CONTROL READY</span></div>
   <section class="launch-content">
     <div class="launch-copy"><div class="launch-eyebrow"><span></span> A SURVIVAL SIMULATION · EXPEDITION SEL-07</div>
-      <h1>THE MOON IS<br><em>NOT</em> FORGIVING.</h1>
+      <h1>THE <span id="destination-name">MOON</span> IS<br><em>NOT</em> FORGIVING.</h1>
       <p>Four crew. Limited power. One outpost. Read the sky, balance every watt, and get your people through the mission.</p>
       <div class="launch-facts"><div><b>04</b><small>CREW MEMBERS</small></div><div><b>48 <small>kWh</small></b><small>BATTERY CAPACITY</small></div><div><b>T−30h</b><small>FIRST MAJOR HAZARD</small></div></div>
       <div class="launch-actions"><button id="guest-start" class="launch-primary">PLAY AS GUEST <span>→</span></button><button id="show-signin" class="launch-secondary">SIGN IN</button><button id="show-create" class="launch-secondary">CREATE ACCOUNT</button></div>
@@ -19,6 +19,11 @@
     </div>
     <aside class="launch-side"><div class="launch-panel-head"><div><small>MISSION CONFIGURATION</small><b>Prepare your expedition</b></div><span class="launch-live-dot"></span></div>
       <label for="landing-duration">MISSION LENGTH</label><select id="landing-duration"><option value="7">07 DAYS · CADET</option><option value="14">14 DAYS · SPECIALIST</option><option value="30">30 DAYS · COMMANDER</option></select>
+      <label class="destination-label">CHOOSE DESTINATION</label>
+      <div class="destination-options" role="radiogroup" aria-label="Mission destination">
+        <label class="destination-option selected"><input type="radio" name="landing-destination" value="moon" checked><span class="destination-symbol moon-symbol">◔</span><span class="destination-copy"><b>THE MOON</b><small>Lunar dust-front scenario</small></span><i>✓</i></label>
+        <label class="destination-option"><input type="radio" name="landing-destination" value="mars"><span class="destination-symbol mars-symbol">●</span><span class="destination-copy"><b>MARS</b><small>Red-planet outpost scenario</small></span><i>✓</i></label>
+      </div>
       <div class="launch-mini-title">WHAT YOU'LL MANAGE</div><div class="launch-system"><i class="system-icon power">ϟ</i><span><b>Power grid</b><small>Generate, store, and budget energy</small></span></div>
       <div class="launch-system"><i class="system-icon life">◌</i><span><b>Life support</b><small>Oxygen, water, food, and crew health</small></span></div>
       <div class="launch-system"><i class="system-icon storm">⚠</i><span><b>Hazard response</b><small>Storm warnings and radiation alerts</small></span></div>
@@ -38,6 +43,7 @@
   <div class="top-center"><span class="live-dot"></span><span id="top-status">OUTPOST ONLINE</span><i class="top-sep"></i><b id="top-clock">SOL 01 · 06:00</b><i class="top-sep"></i><span class="session-label" id="session-label">GUEST · SESSION ONLY</span></div>
   <div class="top-actions">
     <button class="top-btn" id="briefing-open" title="Mission briefing">▤ <span>Briefing</span></button>
+    <button class="top-btn end-mission-btn" id="end-mission-button" title="End mission and view debrief">⏻ <span>End mission</span></button>
     <button class="top-btn" id="inspect-toggle" title="Inspect mission systems">⌄ <span>Inspect</span></button>
     <button class="top-btn audio-btn" id="audio-toggle" title="Toggle ambient audio">♫ <span>Audio Off</span></button>
     <button class="top-btn" id="save-button">↓ <span>Save</span></button><button class="top-btn" id="load-button">↑ <span>Load</span></button>

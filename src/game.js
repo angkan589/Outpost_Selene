@@ -2,9 +2,11 @@ const MAX_POWER = 48;
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const clone = v => JSON.parse(JSON.stringify(v));
 
-function initialState(days = 7) {
+function initialState(days = 7, destination = 'moon') {
   return {
-    hours: 6, missionDays: days, power: 28, oxygen: 10, water: 24, food: 28, materials: 5, samples: 0,
+    hours: 6, missionDays: days, destination: destination === 'mars' ? 'mars' : 'moon',
+    power: 28, oxygen: 10, water: 24, food: 28, materials: 5, samples: 0,
+    crewAssignments: ['engineering', 'water', 'greenhouse', 'research'], crewPaused: [false, false, false, false], endReason: null,
     panelsDeployed: false, panelsActive: false, panelHealth: 100, panelDust: 0,
     oxygenGenerator: false, recyclerOn: false, greenhouseOn: false, cropProgress: 0, cropReady: false,
     shieldInspected: false, shieldActive: false, shieldHealth: 100, stormPrep: false,
@@ -252,7 +254,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
 
   function endMission(reason) {
     if (state.ended) return;
-    state.ended = true; state.won = reason === 'completed';
+    state.ended = true; state.won = reason === 'completed'; state.endReason = reason === 'completed' ? 'completed' : reason;
     log(state.won ? 'Mission duration completed. Crew survival objectives evaluated.' : `MISSION FAILURE: ${reason}`, state.won ? 'success' : 'danger');
     event(state.won ? 'MISSION ACCOMPLISHED' : 'MISSION FAILED',
       state.won ? 'You kept the crew alive for the selected mission duration. Review the debrief and see how your decisions affected the outpost.' : reason,
@@ -380,22 +382,53 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     refresh();
   }
 
-  function reset(days = state.missionDays) {
-    state = initialState(days); lastSupplyAlert = -99; lastPowerAlert = -99;
-    log('Mission systems initialized. Solar panels are stowed and OFF; battery reserve is 28/48 kWh.');
+  function reset(days = state.missionDays, destination = state.destination || 'moon') {
+    state = initialState(days, destination); lastSupplyAlert = -99; lastPowerAlert = -99;
+    log(`Mission systems initialized for ${state.destination === 'mars' ? 'Mars' : 'the Moon'}. Solar panels are stowed and OFF; battery reserve is 28/48 kWh.`);
     log('Forecast: fictionalized lunar dust-front gameplay hazard expected in approximately 30 hours.', 'warning');
     log('Separate solar particle event forecast in 84 hours. Dust hazard and radiation hazard require different responses.', 'warning');
     refresh();
   }
+  function endEarly() {
+    if (state.ended) return false;
+    state.ended = true; state.won = false; state.endReason = 'commander';
+    log('MISSION ENDED EARLY BY COMMANDER. Final crew and resource status recorded.', 'warning');
+    refresh();
+    return true;
+  }
+
+  const validCrewJobs = ['idle', 'engineering', 'water', 'greenhouse', 'crew', 'rover', 'research'];
+  function assignCrew(index, job) {
+    if (state.ended || !Number.isInteger(index) || index < 0 || index > 3 || !validCrewJobs.includes(job)) return false;
+    if (!Array.isArray(state.crewAssignments)) state.crewAssignments = ['engineering', 'water', 'greenhouse', 'research'];
+    if (!Array.isArray(state.crewPaused)) state.crewPaused = [false, false, false, false];
+    const previous = state.crewAssignments[index];
+    state.crewAssignments[index] = job; state.crewPaused[index] = false;
+    log(`Crew ${index + 1} reassigned: ${previous || 'unassigned'} → ${job}.`, 'normal');
+    onSound('click'); refresh(); return true;
+  }
+  function toggleCrewPause(index) {
+    if (state.ended || !Number.isInteger(index) || index < 0 || index > 3) return false;
+    if (!Array.isArray(state.crewPaused)) state.crewPaused = [false, false, false, false];
+    state.crewPaused[index] = !state.crewPaused[index];
+    log(`Crew ${index + 1} job ${state.crewPaused[index] ? 'paused' : 'resumed'} (${state.crewAssignments?.[index] || 'idle'}).`, 'normal');
+    onSound('click'); refresh(); return true;
+  }
+
   function setDuration(days) { state.missionDays = Number(days); log(`Mission duration set to ${days} days.`); refresh(); }
   function clearLog() { state.log = []; log('Mission log view cleared. Simulation state unchanged.'); refresh(); }
   function save() { return getState(); }
   function load(saved) {
     if (!saved || typeof saved.hours !== 'number' || !saved.storm || !Array.isArray(saved.crewHealth)) return false;
-    state = clone(saved); lastSupplyAlert = -99; lastPowerAlert = -99;
+    state = clone(saved);
+    state.destination = state.destination === 'mars' ? 'mars' : 'moon';
+    if (!Array.isArray(state.crewAssignments)) state.crewAssignments = ['engineering', 'water', 'greenhouse', 'research'];
+    if (!Array.isArray(state.crewPaused)) state.crewPaused = [false, false, false, false];
+    if (state.endReason === undefined) state.endReason = state.ended ? (state.won ? 'completed' : 'mission-failed') : null;
+    lastSupplyAlert = -99; lastPowerAlert = -99;
     log('Saved mission loaded on this device.', 'success'); refresh(); return true;
   }
 
   reset();
-  return { getState, perform, advance, reset, setDuration, clearLog, save, load };
+  return { getState, perform, advance, reset, endEarly, assignCrew, toggleCrewPause, setDuration, clearLog, save, load };
 }

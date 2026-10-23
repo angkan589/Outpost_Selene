@@ -171,7 +171,7 @@ function updateState(state) {
   const weatherSub=state.radiation.active?(state.radiationShelter?'CREW SHELTER SECURED':'SHELTER CREW NOW'):radiationAlert?`SOLAR PARTICLES T−${Math.ceil(state.radiation.eta)}H`:state.storm.active?'SOLAR INPUT −86%':state.storm.passed?`PANEL DUST ${state.panelDust.toFixed(0)}%`:`DUST FRONT T−${Math.ceil(state.storm.eta)}H`;
   set('weather-main',weatherMain);set('weather-sub',weatherSub);
   $('#mini-weather').className=`mini-weather ${state.radiation.active||state.storm.active||state.storm.eta<=6||(!state.radiation.passed&&state.radiation.eta<=6)?'weather-danger':state.storm.eta<=24||(!state.radiation.passed&&state.radiation.eta<=24)?'weather-warn':''}`;
-  set('top-status',state.ended?(state.won?'MISSION COMPLETE':'MISSION FAILURE'):state.radiation.active?'RADIATION ALERT':state.storm.active?'STORM CONDITIONS':'OUTPOST ONLINE');
+  set('top-status',state.ended?(state.won?'MISSION COMPLETE':state.endReason==='commander'?'MISSION ENDED':'MISSION FAILURE'):state.radiation.active?'RADIATION ALERT':state.storm.active?'STORM CONDITIONS':`${(state.destination||'moon').toUpperCase()} OUTPOST ONLINE`);
   if(scene)scene.update(state);
   renderRoom(state);updateActivityHUD(state);
 }
@@ -223,13 +223,31 @@ function renderRoom(state=game.getState()) {
     });
     card.append(icon,copy,button);list.append(card);
   }
+  if(currentRoom==='crew'){
+    const assignments = document.createElement('section'); assignments.className='crew-assignment-panel';
+    const heading=document.createElement('div');heading.className='crew-assignment-heading';heading.innerHTML='<b>CREW TASKING</b><small>Assign, pause, or reassign field jobs</small>';assignments.append(heading);
+    const names=['Amara Lewis','Mateo Kim','Sana Rahman','Jules Tan'];
+    const jobs=[['idle','Stand by'],['engineering','Engineering'],['water','Water collection'],['greenhouse','Greenhouse'],['crew','Crew quarters'],['rover','Rover survey'],['research','Research lab']];
+    for(let i=0;i<4;i++){
+      const row=document.createElement('div');row.className='crew-assignment-row';
+      const who=document.createElement('div');who.className='crew-assignment-who';who.innerHTML=`<b>${names[i]}</b><small>${state.crewPaused?.[i]?'JOB PAUSED':'ASSIGNED · '+(state.crewAssignments?.[i]||jobs[i+1][0]).toUpperCase()}</small>`;
+      const select=document.createElement('select');select.setAttribute('aria-label',`Assign ${names[i]}`);select.className='crew-job-select';
+      for(const [value,label] of jobs){const option=document.createElement('option');option.value=value;option.textContent=label;option.selected=value===(state.crewAssignments?.[i]||['engineering','water','greenhouse','research'][i]);select.append(option);}
+      select.addEventListener('change',()=>game.assignCrew(i,select.value));
+      const pause=document.createElement('button');pause.className='crew-job-pause';pause.textContent=state.crewPaused?.[i]?'RESUME':'PAUSE';pause.title=state.crewPaused?.[i]?'Resume this crew member’s job':'Pause job and free this crew member for reassignment';
+      pause.addEventListener('click',()=>game.toggleCrewPause(i));
+      row.append(who,select,pause);assignments.append(row);
+    }
+    const note=document.createElement('p');note.className='crew-assignment-note';note.textContent='Crew walk to their assigned station. Pause a job to hold that crew member in place; choosing a new task automatically resumes them.';assignments.append(note);list.append(assignments);
+  }
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.room===currentRoom));
 }
 function selectRoom(room){
   if(!rooms[room])return;currentRoom=room;$('#control-rail').classList.remove('rail-open');scene?.setRoom(room);
   const r=rooms[room];$('#scene-mode').textContent=room==='weather'?'SPACE-WEATHER TELEMETRY':room==='objectives'?'MISSION CONTROL OVERVIEW':`${r.title.toUpperCase()} · LIVE VIEW`;
-  const subtitles={'engineering':'LUNAR SOUTH POLE · ELECTRICAL YARD','life-support':'HABITAT INTERIOR · LIFE SUPPORT BAY','greenhouse':'BIOREGENERATIVE SYSTEMS · GROW ROOM','crew':'HABITAT INTERIOR · CREW QUARTERS','rover':'SURFACE EXPLORATION ZONE · ROVER TRACK','research':'SCIENCE MODULE · SAMPLE ANALYSIS','weather':'DUST FRONT + SOLAR PARTICLE TRACKING','objectives':'MISSION CONTROL · READINESS OVERVIEW'};
-  $('#scene-subtitle').textContent=subtitles[room]||'LUNAR SOUTH POLE · HABITAT ZONE';
+  const world = game.getState().destination === 'mars' ? 'MARS OUTPOST · ' : 'LUNAR SOUTH POLE · ';
+  const subtitles={'engineering':`${world}ELECTRICAL YARD`,'life-support':'HABITAT INTERIOR · LIFE SUPPORT BAY','greenhouse':'BIOREGENERATIVE SYSTEMS · GROW ROOM','crew':'HABITAT INTERIOR · CREW QUARTERS','rover':'SURFACE EXPLORATION ZONE · ROVER TRACK','research':'SCIENCE MODULE · SAMPLE ANALYSIS','weather':'DUST FRONT + SOLAR PARTICLE TRACKING','objectives':'MISSION CONTROL · READINESS OVERVIEW'};
+  $('#scene-subtitle').textContent=subtitles[room]||`${world}HABITAT ZONE`;
   renderRoom();updateActivityHUD(game.getState());audio.play('click');
 }
 
@@ -344,11 +362,17 @@ function showModal(type){
     $('#volume-slider').addEventListener('input',e=>audio.setVolume(Number(e.target.value)/100));
     $('#restart-mission').addEventListener('click',()=>{const days=Number($('#mission-duration').value);game.reset(days);close();selectRoom('engineering');toast(`New ${days}-day mission initialized.`,'success');});
     addFooter('Close settings',close,false);
+  }else if(type==='end-confirm'){
+    kicker.textContent='COMMAND AUTHORIZATION';title.textContent='End this mission?';
+    addHtml(`<div class="end-confirm-card"><span class="end-confirm-icon">⏻</span><b>Return to the main menu</b><p>This will stop the current session and open the mission debrief. Any unsaved progress in this session will be lost when you leave. ${sessionMode==='guest'?'Guest sessions are never saved.':'Save first if you want to keep this mission on this browser.'}</p></div>
+      <div class="modal-stat-grid">${stat('Elapsed time',`${s.hours.toFixed(0)} h`)}${stat('Destination',(s.destination||'moon').toUpperCase())}${stat('Battery',`${s.power.toFixed(1)} kWh`)}${stat('Crew status',`${Math.min(...s.crewHealth).toFixed(0)}% minimum health`)}</div>`);
+    addFooter('Keep playing',close,false);addFooter('End mission & debrief',()=>{close();if(!s.ended)game.endEarly();showModal('debrief');},true);
   }else if(type==='debrief'){
-    kicker.textContent='MISSION DEBRIEF';title.textContent=s.won?'Mission accomplished':'Mission failed';
-    addHtml(`<div class="debrief-hero ${s.won?'success':'failure'}"><span>${s.won?'✦':'⚠'}</span><b>${s.won?'Crew survived the mission':'Survival conditions lost'}</b><small>${s.won?'You reached the selected mission duration.':'Use the mission log to trace the critical failure.'}</small></div>
-      <div class="modal-stat-grid">${stat('Elapsed time',`${s.hours.toFixed(0)} h`)}${stat('Battery',`${s.power.toFixed(1)} kWh`)}${stat('Lowest crew health',`${Math.min(...s.crewHealth).toFixed(0)}%`)}${stat('Research samples',String(s.samples))}</div>`);
-    addFooter('Restart mission',()=>{game.reset(s.missionDays);close();selectRoom('engineering');},true);addFooter('Review mission log',()=>showModal('log'),false);
+    const commanderEnded=s.endReason==='commander';
+    kicker.textContent='MISSION DEBRIEF';title.textContent=s.won?'Mission accomplished':commanderEnded?'Mission ended early':'Mission failed';
+    addHtml(`<div class="debrief-hero ${s.won?'success':commanderEnded?'neutral':'failure'}"><span>${s.won?'✦':commanderEnded?'Ⅱ':'⚠'}</span><b>${s.won?'Crew survived the mission':commanderEnded?'Mission ended by commander':'Survival conditions lost'}</b><small>${s.won?'You reached the selected mission duration.':commanderEnded?'This was a voluntary early exit. Review crew health and resources before returning to the menu.':'Use the mission log to trace the critical failure.'}</small></div>
+      <div class="modal-stat-grid">${stat('Destination',(s.destination||'moon').toUpperCase())}${stat('Elapsed time',`${s.hours.toFixed(0)} h`)}${stat('Battery',`${s.power.toFixed(1)} kWh`)}${stat('Lowest crew health',`${Math.min(...s.crewHealth).toFixed(0)}%`)}${stat('Research samples',String(s.samples))}</div>`);
+    addFooter('Return to main menu',goHome,false);addFooter('Restart mission',()=>{game.reset(s.missionDays,s.destination);close();selectRoom('engineering');},true);addFooter('Review mission log',()=>showModal('log'),false);
   }else if(type==='scene'){
     kicker.textContent='ENVIRONMENT INSPECTION';title.textContent='Outpost telemetry';
     addHtml(`<div class="modal-stat-grid">${stat('Solar array',s.panelsActive?'GENERATING':s.panelsDeployed?'DEPLOYED / OFF':'STOWED')}${stat('Shield',s.shieldActive?'ACTIVE':'STANDBY')}${stat('Oxygen generator',s.oxygenGenerator?'ONLINE':'OFFLINE')}${stat('Greenhouse',s.cropReady?'HARVEST READY':s.greenhouseOn?`${Math.round(s.cropProgress*100)}% GROWN`:'PAUSED')}${stat('Rover',s.roverOut?'SURVEYING':'DOCKED')}${stat('Dust front',s.storm.active?'IMPACT':s.storm.passed?'PASSED':`T−${Math.ceil(s.storm.eta)}H`)}${stat('Solar particles',s.radiation.active?'ACTIVE':s.radiation.passed?'PASSED':`T−${Math.ceil(s.radiation.eta)}H`)}</div><p class="modal-copy">Every action updates this live environment. Close inspection to continue operating the outpost.</p>`);
@@ -369,7 +393,7 @@ async function passwordDigest(password,salt){
 }
 function showAuth(mode){authMode=mode;const create=mode==='create';$('#auth-panel').classList.remove('hidden');$('#auth-error').classList.add('hidden');$('#auth-form').reset();$('#confirm-wrap').classList.toggle('hidden',!create);$('#auth-confirm').required=create;$('#auth-password').autocomplete(create?'new-password':'current-password');$('#auth-kicker').textContent=create?'NEW CREW ACCOUNT':'ACCOUNT ACCESS';$('#auth-title').textContent=create?'Create your commander account':'Welcome back, commander.';$('#auth-copy').textContent=create?'Create a local account to keep mission saves on this browser.':'Sign in to access this browser account and its saved mission.';$('#auth-submit').innerHTML=`${create?'CREATE ACCOUNT':'SIGN IN'} <span>→</span>`;}
 function beginMission(mode,account=null){
-  sessionMode=mode;currentAccount=account;const days=Number($('#landing-duration').value||7);game.reset(days);
+  sessionMode=mode;currentAccount=account;const days=Number($('#landing-duration').value||7);const destination=document.querySelector('input[name="landing-destination"]:checked')?.value||'moon';game.reset(days,destination);
   if(mode==='account'&&account){try{const raw=localStorage.getItem(`outpost-selene-save:${account.email}`);if(raw)game.load(JSON.parse(raw));}catch{}}
   $('#landing-screen').classList.add('hidden');$('#game-shell').classList.remove('hidden');$('#auth-panel').classList.add('hidden');
   $('#session-label').textContent=mode==='guest'?'GUEST · SESSION ONLY':`ACCOUNT · ${account.email.toUpperCase()}`;
@@ -377,10 +401,12 @@ function beginMission(mode,account=null){
   selectRoom('engineering');updateState(game.getState());
   if(mode==='guest')toast('Guest mission started. Nothing will be saved after this session.','info');else toast(`Welcome, ${account.email}. Mission ready.`, 'success');
 }
-function returnToHome(){
+function goHome(){
   if(sessionMode==='guest')toast('Guest session ended. No progress was stored.','info');else toast('Returned to main menu. Save first if you want to keep this mission.','info');
-  sessionMode='locked';currentAccount=null;$('#game-shell').classList.add('hidden');$('#landing-screen').classList.remove('hidden');$('#auth-panel').classList.add('hidden');
+  sessionMode='locked';currentAccount=null;$('#game-shell').classList.add('hidden');$('#landing-screen').classList.remove('hidden');$('#auth-panel').classList.add('hidden');$('#modal-backdrop').classList.add('hidden');$('#event-overlay').classList.add('hidden');
 }
+function returnToHome(){showModal('end-confirm');}
+function endMissionNow(){showModal('end-confirm');}
 function saveKey(){return currentAccount?`outpost-selene-save:${currentAccount.email}`:null;}
 function saveMission(){if(sessionMode!=='account'||!currentAccount){toast('Guest mode never stores progress. Sign in or create an account to save.','warning');return;}try{localStorage.setItem(saveKey(),JSON.stringify(game.save()));toast('Mission saved to this browser account.','success');audio.play('click');}catch{toast('Could not save in this browser. Check storage settings.','danger');}}
 function loadMission(){if(sessionMode!=='account'||!currentAccount){toast('Guest mode has no saved missions.','warning');return;}try{const raw=localStorage.getItem(saveKey());if(!raw){toast('No saved mission for this account yet. Use Save first.','warning');return;}if(!game.load(JSON.parse(raw))){toast('Save data was not recognized.','danger');return;}selectRoom('engineering');toast('Saved mission loaded.','success');audio.play('click');}catch{toast('Could not load the local save.','danger');}}
@@ -414,11 +440,17 @@ window.addEventListener('keydown',e=>{
   if(e.code==='Space'&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();game.advance(1);}
 });
 updateAudioButton();
+document.querySelectorAll('input[name="landing-destination"]').forEach(input=>input.addEventListener('change',()=>{
+  document.querySelectorAll('.destination-option').forEach(card=>card.classList.toggle('selected',card.querySelector('input')?.checked));
+  const chosen=document.querySelector('input[name="landing-destination"]:checked')?.value||'moon';
+  $('#destination-name').textContent=chosen==='mars'?'MARS':'MOON';
+}));
 $('#guest-start').addEventListener('click',()=>beginMission('guest'));
 $('#show-signin').addEventListener('click',()=>showAuth('signin'));
 $('#show-create').addEventListener('click',()=>showAuth('create'));
 $('#auth-close').addEventListener('click',()=>$('#auth-panel').classList.add('hidden'));
 $('#return-home').addEventListener('click',returnToHome);
+$('#end-mission-button').addEventListener('click',endMissionNow);
 $('#auth-form').addEventListener('submit',async e=>{
   e.preventDefault();const email=$('#auth-email').value.trim().toLowerCase(),password=$('#auth-password').value,confirm=$('#auth-confirm').value,error=$('#auth-error');error.classList.add('hidden');
   try{const accounts=readAccounts();

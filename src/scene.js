@@ -25,7 +25,7 @@ export function createLunarScene(canvas) {
     const variation = (Math.sin(x * 1.8) * Math.cos(z * 1.5) + 1) / 2;
     colors.push(.26 + variation * .12, .27 + variation * .08, .31 + variation * .07);
   }
-  terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); terrainGeo.rotateX(-Math.PI / 2); terrainGeo.computeVertexNormals();
+  terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); const terrainBaseColors = colors.slice(); terrainGeo.rotateX(-Math.PI / 2); terrainGeo.computeVertexNormals();
   const terrain = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
   terrain.position.y = -.22; scene.add(terrain);
   const rockMat = mat(0x6e707b, 1), craterMat = mat(0x353b49, 1);
@@ -219,17 +219,52 @@ export function createLunarScene(canvas) {
     objectives: { position: new THREE.Vector3(0, 7.3, 17.8), target: new THREE.Vector3(0, 1.5, 0) }
   };
   let activeRoom = 'engineering';
+  let activeDestination = 'moon';
+  const crewJobPositions = {
+    idle: [new THREE.Vector3(-1.2,0,3.2),new THREE.Vector3(-.4,0,3.45),new THREE.Vector3(.45,0,3.4),new THREE.Vector3(1.2,0,3.2)],
+    engineering: new THREE.Vector3(-4.5,0,-1.15),
+    water: new THREE.Vector3(-1.15,0,1.15),
+    'life-support': new THREE.Vector3(-1.15,0,1.15),
+    greenhouse: new THREE.Vector3(3.65,0,.45),
+    crew: new THREE.Vector3(.1,0,2.25),
+    rover: new THREE.Vector3(5.1,0,1.8),
+    research: new THREE.Vector3(-3.1,0,.55)
+  };
   let cameraTarget = roomViews.engineering.target.clone();
   let cameraPositionTarget = roomViews.engineering.position.clone();
   function setRoom(room) {
     const view = roomViews[room] || roomViews.engineering;
     activeRoom = room; cameraTarget.copy(view.target); cameraPositionTarget.copy(view.position);
   }
+  function setDestination(destination = 'moon') {
+    const next = destination === 'mars' ? 'mars' : 'moon';
+    if (next === activeDestination) return;
+    activeDestination = next;
+    scene.background.setHex(next === 'mars' ? 0x170d12 : 0x070d19);
+    scene.fog.color.setHex(next === 'mars' ? 0x4e2924 : 0x111522);
+    keyLight.color.setHex(next === 'mars' ? 0xffb28b : 0xffe5c3);
+    keyLight.intensity = next === 'mars' ? 2.8 : 3.2;
+    rimLight.color.setHex(next === 'mars' ? 0xd77d68 : 0x5b9fff);
+    rockMat.color.setHex(next === 'mars' ? 0xa55e49 : 0x6e707b);
+    craterMat.color.setHex(next === 'mars' ? 0x512d2b : 0x353b49);
+    const terrainColors = terrainGeo.attributes.color;
+    for (let i = 0; i < terrainColors.count; i++) {
+      const r = terrainBaseColors[i * 3], g = terrainBaseColors[i * 3 + 1], b = terrainBaseColors[i * 3 + 2];
+      terrainColors.setXYZ(i, next === 'mars' ? Math.min(1, r * 1.42 + .08) : r,
+        next === 'mars' ? g * .72 : g, next === 'mars' ? b * .61 : b);
+    }
+    terrainColors.needsUpdate = true;
+    mars.visible = next !== 'mars';
+    earth.scale.setScalar(next === 'mars' ? .72 : 1);
+    // Mars has a warmer, dustier atmosphere; the Moon retains the dark lunar sky.
+    dustPoints.material.color?.setHex(next === 'mars' ? 0xe19a76 : 0xffffff);
+  }
 
   const tickForCrew = i => performance.now() * .0005 + i * 1.7;
 
   function update(state) {
     latest = state;
+    setDestination(state.destination || 'moon');
     const deployTarget = state.panelsDeployed ? .12 : 1.25;
     solarA.hinge.userData.target = deployTarget; solarB.hinge.userData.target = deployTarget + .04;
     bluePanel.emissive.setHex(state.panelsActive ? 0x0b6794 : 0x06182b); bluePanel.emissiveIntensity = state.panelsActive ? 1.1 : .3;
@@ -247,7 +282,16 @@ export function createLunarScene(canvas) {
     roverTarget.set(state.roverOut ? 8.1 : 2.7, 0, state.roverOut ? -2.7 : 2.2); headlamp.intensity = state.roverOut ? 1.8 : 0;
     crewActors.forEach((actor, i) => {
       const sheltered = state.radiationShelter;
-      actor.target.copy(sheltered ? crewShelterPositions[i] : actor.base);
+      const job = state.crewAssignments?.[i] || ['engineering','water','greenhouse','research'][i];
+      const paused = Boolean(state.crewPaused?.[i]);
+      if (sheltered) actor.target.copy(crewShelterPositions[i]);
+      else if (paused) actor.target.copy(actor.group.position);
+      else if (job === 'idle') actor.target.copy(crewJobPositions.idle[i]);
+      else {
+        const station = crewJobPositions[job] || actor.base;
+        const offset = (i - 1.5) * .32;
+        actor.target.set(station.x + offset, 0, station.z + (i % 2 ? .22 : -.22));
+      }
       actor.group.visible = true;
     });
     dustPoints.material.opacity = state.storm.active ? .82 : (!state.storm.passed && state.storm.eta < 24 ? .08 + (24 - state.storm.eta) / 24 * .4 : 0);
@@ -272,9 +316,17 @@ export function createLunarScene(canvas) {
     solarB.hinge.rotation.x = THREE.MathUtils.damp(solarB.hinge.rotation.x, solarB.hinge.userData.target ?? 1.29, 3.3, dt);
     rover.position.lerp(roverTarget, 1 - Math.exp(-dt * 1.25)); wheels.forEach(w => { if (latest?.roverOut) w.rotation.z += dt * 2.8; });
     crewActors.forEach((actor, i) => {
-      actor.group.position.lerp(actor.target, 1 - Math.exp(-dt * .8));
-      actor.group.rotation.y = Math.sin(tickForCrew(i)) * .05;
-      actor.limbs.forEach((limb, j) => { limb.rotation.z = Math.sin(t * 1.4 + actor.phase + j) * (latest?.roverOut && i === 3 ? .22 : .035); });
+      const distance = actor.group.position.distanceTo(actor.target);
+      actor.group.position.lerp(actor.target, 1 - Math.exp(-dt * 1.35));
+      if (distance > .16) {
+        const dx = actor.target.x - actor.group.position.x, dz = actor.target.z - actor.group.position.z;
+        actor.group.rotation.y = THREE.MathUtils.damp(actor.group.rotation.y, Math.atan2(dx, dz), 2.5, dt);
+      } else actor.group.rotation.y = THREE.MathUtils.damp(actor.group.rotation.y, Math.sin(tickForCrew(i)) * .05, 1.2, dt);
+      actor.limbs.forEach((limb, j) => {
+        const walking = distance > .16;
+        const swing = Math.sin(t * (walking ? 6.5 : 1.4) + actor.phase + j * Math.PI) * (walking ? .34 : .025);
+        limb.rotation.z = swing;
+      });
     });
     rover.rotation.y = THREE.MathUtils.damp(rover.rotation.y, latest?.roverOut ? -.45 : .1, 1.8, dt);
     shield.rotation.y += dt * .06; shield.scale.setScalar(1 + (latest?.shieldActive ? Math.sin(t * 2.5) * .012 : 0));
@@ -294,5 +346,5 @@ export function createLunarScene(canvas) {
     const look = cameraTarget.clone(); look.x += Math.sin(t * .14) * .035; camera.lookAt(look); renderer.render(scene, camera);
   }
   animate();
-  return { update, setRoom, triggerEffect, dispose() { resizeObserver.disconnect(); renderer.dispose(); } };
+  return { update, setRoom, setDestination, triggerEffect, dispose() { resizeObserver.disconnect(); renderer.dispose(); } };
 }

@@ -47,3 +47,41 @@
 /* The command rail is intentionally fixed: no page-level scrolling in the live game. */
 .action-list{flex:1;min-height:0;overflow:hidden}.power-plan-card{max-height:104px;overflow:hidden}.stage-bottom-right{bottom:184px}
 @media(max-height:760px) and (min-width:761px){.activity-hud{bottom:10px;width:220px;padding:8px}.activity-hud-metrics{margin-top:7px}.activity-hud-note{font-size:7px}.power-plan-card{max-height:92px;padding:7px}.power-plan-stats{margin:5px 0}.power-plan-stat{padding:5px}.power-plan-tip{font-size:6px}.rail-head h1{font-size:15px}.rail-description{margin:7px 0;min-height:24px}.action-card{padding:6px;row-gap:5px}.action-copy small{font-size:7px}.action-run{height:23px}.rail-bottom{padding-top:6px}.next-step{padding:6px}.time-control{margin-top:6px}}
+
+
+/* OUTPOST SELENE gameplay improvements: destination selector, crew tasking, safe mission exit. */
+.destination-label{display:block;font:8px 'DM Mono',monospace;letter-spacing:.12em;color:#8ba3b9;margin:14px 0 8px}
+.destination-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:7px}
+.destination-option{position:relative;display:flex;align-items:center;gap:8px;min-width:0;padding:10px;border:1px solid #30485d;border-radius:9px;background:#091625;color:#c7d8e8;cursor:pointer;transition:border-color .16s,background .16s}
+.destination-option input{position:absolute;opacity:0;pointer-events:none}
+.destination-option.selected,.destination-option:has(input:checked){border-color:#69d9ef;background:#102b3b;box-shadow:inset 0 0 0 1px #69d9ef22}
+.destination-symbol{display:grid;place-items:center;flex:none;width:27px;height:27px;border-radius:50%;font-size:20px}
+.moon-symbol{color:#dce8f4;background:radial-gradient(circle at 30% 25%,#cdd7e4,#4c6177)}
+.mars-symbol{color:#ffb18b;background:radial-gradient(circle at 30% 25%,#ffd0a2,#8c392e)}
+.destination-copy{min-width:0;display:block}
+.destination-copy b{display:block;font:8px 'DM Mono',monospace;letter-spacing:.06em}
+.destination-copy small{display:block;font-size:7px;line-height:1.35;color:#839bb1;margin-top:4px}
+.destination-option>i{margin-left:auto;color:#72e6f4;font-style:normal;font-size:11px;opacity:0}
+.destination-option.selected>i,.destination-option:has(input:checked)>i{opacity:1}
+.end-mission-btn{border-color:#684b43!important;color:#ffc3a5!important;background:#2b1b1b!important}
+.end-mission-btn:hover{border-color:#ff9f7d!important;background:#3b2220!important}
+.end-confirm-card{display:flex;flex-direction:column;align-items:center;text-align:center;padding:17px 15px;border:1px solid #735448;border-radius:10px;background:linear-gradient(140deg,#251d1d,#111c2a);margin-bottom:12px}
+.end-confirm-icon{display:grid;place-items:center;width:39px;height:39px;border-radius:11px;background:#432b27;color:#ffb293;font-size:22px;margin-bottom:10px}
+.end-confirm-card>b{font-size:13px;color:#f2f6fa}
+.end-confirm-card>p{max-width:420px;margin:8px 0 0;color:#aab8c7;font-size:9px;line-height:1.6}
+.debrief-hero.neutral{border-color:#6a6650;background:#292719}
+.debrief-hero.neutral>span{color:#e8d39a}
+.crew-assignment-panel{flex:none;margin-top:7px;padding:8px;border:1px solid #2b5062;border-radius:9px;background:#081824}
+.crew-assignment-heading{display:flex;flex-direction:column;gap:3px;padding:0 0 6px;border-bottom:1px solid #ffffff12}
+.crew-assignment-heading>b{font:8px 'DM Mono',monospace;letter-spacing:.1em;color:#86e5f4}
+.crew-assignment-heading>small{font-size:7px;color:#8299ad}
+.crew-assignment-row{display:grid;grid-template-columns:minmax(70px,1fr) minmax(90px,1.05fr) 48px;align-items:center;gap:5px;padding:6px 0;border-bottom:1px solid #ffffff0b}
+.crew-assignment-who{min-width:0}
+.crew-assignment-who>b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:7px;color:#dce8f2}
+.crew-assignment-who>small{display:block;font:6px 'DM Mono',monospace;color:#7fa1b6;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crew-job-select{min-width:0;width:100%;height:25px;padding:0 4px;border:1px solid #344d61;border-radius:5px;background:#0c1b2a;color:#dcecf7;font-size:7px}
+.crew-job-pause{height:25px;padding:0 4px;border:1px solid #45596b;border-radius:5px;background:#142331;color:#a9d7e3;font:7px 'DM Mono',monospace}
+.crew-job-pause:hover{border-color:#77ddeb;color:#fff}
+.crew-assignment-note{font-size:7px;line-height:1.45;color:#8197aa;margin:7px 0 0}
+@media(max-width:1250px){.destination-copy small{font-size:6px}.crew-assignment-row{grid-template-columns:minmax(60px,.9fr) minmax(82px,1.1fr) 44px;gap:4px}.crew-assignment-panel{padding:6px}}
+@media(max-width:760px){.destination-options{gap:6px}.destination-option{padding:8px 6px;gap:5px}.destination-copy b{font-size:7px}.destination-copy small{font-size:6px}.end-mission-btn{font-size:0!important;width:30px;padding:0!important}.end-mission-btn span{display:none!important}.crew-assignment-row{grid-template-columns:minmax(58px,.85fr) minmax(78px,1.15fr) 42px}.crew-assignment-who>b{font-size:6px}.crew-job-select,.crew-job-pause{font-size:6px}.crew-assignment-note{font-size:6px}}
