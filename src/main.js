@@ -90,8 +90,8 @@ const rooms = {
   weather: {
     kicker: 'MISSION INTELLIGENCE / WEATHER', title: 'Storm Forecast',
     description: 'Track the fictional dust-front gameplay hazard and the separate solar-particle radiation event. Both timelines interrupt long time jumps.',
-    status: s => s.radiation.active ? 'RADIATION EVENT' : s.storm.active ? 'STORM IMPACT' : !s.radiation.passed && s.radiation.eta <= 6 ? 'RADIATION CRITICAL' : s.storm.passed ? 'FRONT PASSED' : s.storm.eta <= 6 ? 'CRITICAL' : s.storm.eta <= 24 ? 'WARNING' : 'WATCH',
-    hint: s => s.radiation.active && !s.radiationShelter ? 'RADIATION ACTIVE: shelter the crew inside immediately.' : !s.radiation.passed && s.radiation.eta <= 12 && !s.radiationShelter ? 'Solar particle event approaching: secure the crew shelter. This is separate from the dust front.' : s.storm.active ? 'Solar input is heavily reduced. Prioritize essential systems and battery reserve.' : s.storm.eta <= 12 ? 'Prepare the equipment shield, recall the rover, and pause optional loads.' : 'Track both hazard timelines; they are different events.',
+    status: s => s.radiation.active ? `RADIATION LIVE · ${Math.max(0, Math.ceil(s.radiation.duration - s.radiation.elapsed))}H LEFT` : s.storm.active ? `DUST FRONT LIVE · ${Math.max(0, Math.ceil(s.storm.duration - s.storm.elapsed))}H LEFT` : s.storm.passed ? 'DUST FRONT PASSED' : !s.radiation.passed && s.radiation.eta <= 6 ? 'RADIATION CRITICAL' : s.storm.eta <= 6 ? 'DUST FRONT IMMINENT' : s.storm.eta <= 24 ? 'DUST FRONT WARNING' : 'HAZARDS MONITORED',
+    hint: s => s.radiation.active && !s.radiationShelter ? 'RADIATION LIVE: shelter the crew inside immediately; the equipment shield is not crew protection.' : s.storm.active ? `DUST FRONT LIVE: ${Math.max(0, Math.ceil(s.storm.duration - s.storm.elapsed))}h remain. Solar input is down about 86%; conserve battery.` : s.storm.passed ? `DUST FRONT PASSED: ${s.panelDust.toFixed(0)}% panel dust and ${s.panelHealth.toFixed(0)}% panel health. Clean/repair the array.` : !s.radiation.passed && s.radiation.eta <= 12 && !s.radiationShelter ? 'Solar particle event approaching: secure the crew shelter. This is separate from the dust front.' : s.storm.eta <= 12 ? 'Prepare the equipment shield, recall the rover, and pause optional loads.' : 'Track the dust-front and solar-particle timelines separately.',
     actions: s => [
       !s.shieldInspected && action('inspect-shield','Inspect storm shield','Run diagnostics before the front arrives.','INSPECT SHIELD','standard','scan'),
       s.shieldInspected && !s.shieldActive && !s.storm.passed && action('activate-shield','Activate storm shield','Draws 0.45 kWh/hour. Keep about 22 kWh stored for the storm and essential systems.','RAISE SHIELD','risk','shield'),
@@ -103,8 +103,8 @@ const rooms = {
   objectives: {
     kicker: 'MISSION CONTROL / OBJECTIVES', title: 'Mission Objectives',
     description: 'Keep the crew alive, secure power, protect the outpost, and complete your selected mission duration.',
-    status: s => s.ended ? (s.won ? 'MISSION COMPLETE' : 'MISSION FAILED') : 'MISSION ACTIVE',
-    hint: s => s.ended ? 'Review the log and restart when ready.' : 'A completed checklist is not enough if the crew cannot survive.',
+    status: s => s.ended ? (s.won ? 'MISSION COMPLETE' : 'MISSION ENDED') : s.priorities?.length ? `${s.priorities.length} LIVE TASKS` : 'ALL SYSTEMS STABLE',
+    hint: s => s.ended ? 'Review the log and return to the main menu when ready.' : s.priorities?.[0] ? `${s.priorities[0].title}: ${s.priorities[0].detail}` : 'All current priorities are stable. Continue monitoring reserves.',
     actions: s => [
       !s.panelsActive && action('deploy','Deploy solar array','Panels must be deployed before generation can start.','DEPLOY ARRAY','power','deploy'),
       !s.oxygenGenerator && action('oxygen-on','Start oxygen generator','Keep the crew breathing.','START O₂ GENERATOR','power','power-on'),
@@ -167,11 +167,18 @@ function updateState(state) {
   set('readout-shield',state.shieldActive?`ACTIVE · ${state.shieldHealth.toFixed(0)}%`:'STANDBY');
   set('readout-oxygen',state.oxygenGenerator?'GENERATING':'OFFLINE');set('readout-rover',state.roverOut?`OUT · ${Math.ceil(state.roverMission)}H`:'DOCKED');
   const radiationAlert=state.radiation.active||(!state.radiation.passed&&state.radiation.eta<=12);
-  const weatherMain=state.radiation.active?'RADIATION EVENT':state.storm.active?'DUST-FRONT IMPACT':state.radiation.passed?(state.storm.passed?'HAZARDS PASSED':'RADIATION PASSED'):radiationAlert?'RADIATION WARNING':state.storm.eta<=6?'STORM IMMINENT':state.storm.eta<=24?'STORM WARNING':'CLEAR SKY';
-  const weatherSub=state.radiation.active?(state.radiationShelter?'CREW SHELTER SECURED':'SHELTER CREW NOW'):radiationAlert?`SOLAR PARTICLES T−${Math.ceil(state.radiation.eta)}H`:state.storm.active?'SOLAR INPUT −86%':state.storm.passed?`PANEL DUST ${state.panelDust.toFixed(0)}%`:`DUST FRONT T−${Math.ceil(state.storm.eta)}H`;
+  const stormLeft=Math.max(0,Math.ceil((state.storm.duration||18)-(state.storm.elapsed||0)));
+  const radiationLeft=Math.max(0,Math.ceil((state.radiation.duration||6)-(state.radiation.elapsed||0)));
+  const weatherMain=state.storm.active?'DUST FRONT LIVE':state.storm.passed?'DUST FRONT PASSED':state.storm.eta<=24?'DUST FRONT WARNING':'CLEAR SKY';
+  const weatherSub=state.storm.active?`${stormLeft}H LEFT · SOLAR −86% · SHIELD ${state.shieldActive?'ON':'OFF'}`:state.storm.passed?`PASSED · PANEL ${state.panelHealth.toFixed(0)}% · DUST ${state.panelDust.toFixed(0)}%`:`IMPACT T−${Math.ceil(state.storm.eta)}H · SHIELD ${state.shieldActive?'ON':'OFF'}`;
   set('weather-main',weatherMain);set('weather-sub',weatherSub);
+  const radiationStatus=state.radiation.active?`SOLAR RADIATION LIVE · ${radiationLeft}H LEFT`:!state.radiation.passed&&state.radiation.eta<=12?`RADIATION T−${Math.ceil(state.radiation.eta)}H`:null;
+  const topStatus=state.ended?(state.won?'MISSION COMPLETE':state.endReason==='commander'?'MISSION ENDED':'MISSION FAILURE'):radiationStatus||(state.storm.active?`DUST FRONT LIVE · ${stormLeft}H`:!state.storm.passed&&state.storm.eta<=24?`DUST FRONT T−${Math.ceil(state.storm.eta)}H`:state.storm.passed?'DUST FRONT PASSED':`${(state.destination||'moon').toUpperCase()} OUTPOST ONLINE`);
+  set('top-status',topStatus);
+  const topStatusNode=$('#top-status');
+  topStatusNode.className=state.ended?'status-ended':state.radiation.active||state.storm.active?'status-danger':radiationStatus||(!state.storm.passed&&state.storm.eta<=24)?'status-warning':state.storm.passed?'status-passed':'';
+  topStatusNode.title=`Dust front: ${state.storm.active?`LIVE, ${stormLeft}h remaining`:state.storm.passed?'PASSED':`impact in ${Math.ceil(state.storm.eta)}h`}. Solar particle event: ${state.radiation.active?`LIVE, ${radiationLeft}h remaining`:state.radiation.passed?'PASSED':`in ${Math.ceil(state.radiation.eta)}h`}.`;
   $('#mini-weather').className=`mini-weather ${state.radiation.active||state.storm.active||state.storm.eta<=6||(!state.radiation.passed&&state.radiation.eta<=6)?'weather-danger':state.storm.eta<=24||(!state.radiation.passed&&state.radiation.eta<=24)?'weather-warn':''}`;
-  set('top-status',state.ended?(state.won?'MISSION COMPLETE':state.endReason==='commander'?'MISSION ENDED':'MISSION FAILURE'):state.radiation.active?'RADIATION ALERT':state.storm.active?'STORM CONDITIONS':`${(state.destination||'moon').toUpperCase()} OUTPOST ONLINE`);
   if(scene)scene.update(state);
   renderRoom(state);updateActivityHUD(state);
 }
@@ -180,8 +187,26 @@ function renderRoom(state=game.getState()) {
   $('#rail-kicker').textContent=room.kicker;$('#rail-title').textContent=room.title;$('#rail-description').textContent=room.description;
   $('#rail-status-value').textContent=room.status(state);$('#hint-text').textContent=room.hint(state);
   const list=$('#action-list');list.replaceChildren();
-  const actions=room.actions(state);
-  if(!actions.length){const empty=document.createElement('div');empty.className='empty-actions';empty.innerHTML='<span>✓</span><b>No urgent action in this room.</b><small>Inspect another system or advance time carefully.</small>';list.append(empty);}
+  if(currentRoom==='objectives'){
+    const priorities=state.priorities||[];
+    if(!priorities.length){const empty=document.createElement('div');empty.className='empty-actions';empty.innerHTML='<span>✓</span><b>All current systems are stable.</b><small>No active warning tasks. Keep monitoring power, food, water, oxygen and both hazard timelines.</small>';list.append(empty);}
+    else{
+      const feedHead=document.createElement('div');feedHead.className='priority-feed-head';feedHead.innerHTML=`<span>LIVE OBJECTIVE QUEUE</span><b>${priorities.length} ACTIVE</b>`;list.append(feedHead);
+      const roomNames={engineering:'ENGINEERING', 'life-support':'LIFE SUPPORT', greenhouse:'GREENHOUSE', crew:'CREW QUARTERS', rover:'ROVER BAY', research:'RESEARCH LAB', weather:'WEATHER'};
+      for(const task of priorities){
+        const card=document.createElement('article');card.className=`priority-card priority-${task.level||'warning'}`;
+        const head=document.createElement('div');head.className='priority-card-head';
+        const level=document.createElement('span');level.className='priority-level';level.textContent=(task.level||'warning').toUpperCase();
+        const roomLabel=document.createElement('small');roomLabel.textContent=roomNames[task.room]||'MISSION CONTROL';head.append(level,roomLabel);
+        const title=document.createElement('b');title.className='priority-card-title';title.textContent=task.title;
+        const detail=document.createElement('p');detail.className='priority-card-detail';detail.textContent=task.detail;
+        const button=document.createElement('button');button.className='priority-open';button.textContent=`OPEN ${roomNames[task.room]||'ROOM'} →`;button.addEventListener('click',()=>selectRoom(task.room));
+        card.append(head,title,detail,button);list.append(card);
+      }
+    }
+  }
+  const actions=currentRoom==='objectives'?[]:room.actions(state);
+  if(currentRoom!=='objectives'&&!actions.length){const empty=document.createElement('div');empty.className='empty-actions';empty.innerHTML='<span>✓</span><b>No urgent action in this room.</b><small>Inspect another system or advance time carefully.</small>';list.append(empty);}
   for(const item of actions){
     const card=document.createElement('article');card.className=`action-card action-${item.kind}`;
     const icon=document.createElement('span');icon.className='action-card-icon';icon.textContent=item.kind==='risk'?'⚠':item.kind==='power'?'ϟ':item.id.includes('scan')?'⌖':'◇';
@@ -265,7 +290,7 @@ function updateActivityHUD(s=game.getState()){
     crew:{icon:'♧',kicker:'CREW TELEMETRY / LIVE',title:'Crew status',metrics:[['LOWEST HEALTH',`${Math.min(...s.crewHealth).toFixed(0)}%`,Math.min(...s.crewHealth)],['FATIGUE',`${s.crewFatigue.toFixed(0)}%`,s.crewFatigue]],note:s.radiation.active?(s.radiationShelter?'Crew sheltered during the solar particle event.':'RADIATION EVENT ACTIVE — shelter the crew now.'):`Radiation event in ${Math.ceil(s.radiation.eta)}h · ${s.radiationShelter?'Shelter secured':'Shelter not secured'}.`},
     rover:{icon:'⌖',kicker:'SURFACE OPERATIONS / LIVE',title:'Rover mission telemetry',metrics:[['ROVER STATUS',s.roverOut?'OUT ON SURVEY':'DOCKED',s.roverOut?65:100],['ENERGY COST','6 kWh / survey',Math.min(100,s.power/6*100)]],note:s.storm.active||(!s.storm.passed&&s.storm.eta<8)?'Surface hazard is too close. Keep the rover docked.':'A survey returns +2 materials and +1 sample after 3h.'},
     research:{icon:'◇',kicker:'SCIENCE / LIVE',title:'Research lab telemetry',metrics:[['SAMPLES',String(s.samples),Math.min(100,s.samples*25)],['FORECAST MODEL',s.researchBonus?'ENHANCED':'BASELINE',s.researchBonus?100:35]],note:'Sample analysis costs 2 kWh and 1h. It improves forecast confidence, not survival by itself.'},
-    weather:{icon:'⚠',kicker:'SPACE WEATHER / LIVE',title:'Two different hazards',metrics:[['DUST FRONT',s.storm.active?'IMPACT':s.storm.passed?'PASSED':`T−${Math.ceil(s.storm.eta)}h`,s.storm.active?100:s.storm.passed?0:Math.max(0,100-s.storm.eta/30*100)],['SOLAR PARTICLES',s.radiation.active?'ACTIVE':s.radiation.passed?'PASSED':`T−${Math.ceil(s.radiation.eta)}h`,s.radiation.active?100:s.radiation.passed?0:Math.max(0,100-s.radiation.eta/84*100)]],note:'Dust front is a fictional lunar gameplay hazard affecting panels. Solar particles are a separate radiation hazard; shelter crew inside.'},
+    weather:{icon:'⚠',kicker:'SPACE WEATHER / LIVE',title:'Two different hazards',metrics:[['DUST FRONT',s.storm.active?`LIVE · ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}H LEFT`:s.storm.passed?'PASSED':`T−${Math.ceil(s.storm.eta)}h`,s.storm.active?100:s.storm.passed?0:Math.max(0,100-s.storm.eta/30*100)],['SOLAR PARTICLES',s.radiation.active?`LIVE · ${Math.max(0,Math.ceil(s.radiation.duration-s.radiation.elapsed))}H LEFT`:s.radiation.passed?'PASSED':`T−${Math.ceil(s.radiation.eta)}h`,s.radiation.active?100:s.radiation.passed?0:Math.max(0,100-s.radiation.eta/84*100)]],note:`Dust front: ${s.storm.active?`LIVE, ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}h remaining`:s.storm.passed?'PASSED':`impact in ${Math.ceil(s.storm.eta)}h`}. Solar-particle radiation: ${s.radiation.active?`LIVE, ${Math.max(0,Math.ceil(s.radiation.duration-s.radiation.elapsed))}h remaining`:s.radiation.passed?'PASSED':`in ${Math.ceil(s.radiation.eta)}h`}. These are separate hazards.`},
     objectives:{icon:'☑',kicker:'MISSION CONTROL / LIVE',title:'Mission readiness',metrics:[['MISSION ELAPSED',`${Math.floor(s.hours/24)}d ${Math.floor(s.hours%24)}h`,s.hours/(s.missionDays*24)*100],['CRITICAL TASKS',String(s.priorities.filter(p=>p.level==='critical').length),s.priorities.filter(p=>p.level==='critical').length?20:100]],note:s.priorities[0]?`Next priority: ${s.priorities[0].title}. Select it from the task list.`:'No immediate critical task. Continue monitoring reserves.'}
   };
   const v=views[currentRoom]||views.engineering;put('activity-hud-icon',v.icon);put('activity-hud-kicker',v.kicker);put('activity-hud-title',v.title);put('activity-hud-note',v.note);
@@ -327,8 +352,8 @@ function showModal(type){
     addFooter('Back to mission',close);
   }else if(type==='weather'){
     kicker.textContent='MISSION INTELLIGENCE';title.textContent='Weather & forecast';
-    const eta=s.storm.active?'IMPACT IN PROGRESS':s.storm.passed?'FRONT PASSED':`${Math.ceil(s.storm.eta)} HOURS`;
-    addHtml(`<div class="forecast-hero ${s.storm.active?'critical':s.storm.eta<=12?'warning':''}"><span>STORM ETA</span><b>${eta}</b><small>${s.storm.active?'Solar output severely reduced.':s.storm.passed?'Clean and repair the array.':'Dust front may damage exposed equipment.'}</small></div>
+    const eta=s.storm.active?`LIVE · ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}H LEFT`:s.storm.passed?'FRONT PASSED':`T−${Math.ceil(s.storm.eta)} HOURS`;
+    addHtml(`<div class="forecast-hero ${s.storm.active?'critical':!s.storm.passed&&s.storm.eta<=12?'warning':''}"><span>DUST FRONT STATUS</span><b>${eta}</b><small>${s.storm.active?`Solar input is reduced about 86%. Expected to clear in ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))} hours.`:s.storm.passed?`Front has passed. Clean ${s.panelDust.toFixed(0)}% dust coverage and repair ${s.panelHealth.toFixed(0)}% panel health.`:`Impact forecast in ${Math.ceil(s.storm.eta)} hours. Shield ${s.shieldActive?'ACTIVE':'OFF'}.`}</small></div>
       <div class="modal-stat-grid">${stat('Shield',s.shieldActive?'ACTIVE':'STANDBY')}${stat('Panel health',`${s.panelHealth.toFixed(0)}%`)}${stat('Dust coverage',`${s.panelDust.toFixed(0)}%`)}${stat('Battery',`${s.power.toFixed(1)} kWh`)}</div>
       <div class="forecast-milestones">${[[24,'T−24H','Warning'],[12,'T−12H','Urgent'],[6,'T−6H','Critical'],[1,'T−1H','Final warning']].map(([h,tag,txt])=>`<div class="${!s.storm.passed&&s.storm.eta<=h?'milestone-past':''}"><i></i><b>${tag}</b><small>${txt}</small></div>`).join('')}</div>
       <div class="radiation-card"><b>SOLAR PARTICLE EVENT · SEPARATE HAZARD</b><p>${s.radiation.active?'ACTIVE — shelter crew immediately.':s.radiation.passed?'Passed. Review recorded crew exposure.':`Forecast in ${Math.ceil(s.radiation.eta)} hours; duration 6 hours.`} This is energetic-particle radiation, not the fictional dust-front gameplay event. The equipment shield does not replace crew shelter inside the habitat.</p></div>

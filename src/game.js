@@ -22,7 +22,7 @@ function initialState(days = 7, destination = 'moon') {
 
 export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = () => {}, onEffect = () => {}, onSound = () => {} } = {}) {
   let state = initialState();
-  let lastSupplyAlert = -99, lastPowerAlert = -99;
+  let lastSupplyAlert = -99, lastPowerAlert = -99, lastThresholdAlert = -99;
 
   function timestamp() {
     const sol = Math.floor(state.hours / 24) + 1;
@@ -37,18 +37,99 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
 
   function computePriorities() {
     const p = [];
-    if (!state.panelsActive) p.push({ level: 'critical', title: 'Restore solar generation', detail: 'Array is not generating power.', room: 'engineering' });
-    if (!state.oxygenGenerator) p.push({ level: state.oxygen < 5 ? 'critical' : 'warning', title: 'Start oxygen generator', detail: `${state.oxygen.toFixed(1)} units in reserve.`, room: 'life-support' });
-    if (!state.recyclerOn) p.push({ level: 'warning', title: 'Start water recycling', detail: 'Water will run down faster.', room: 'life-support' });
-    if (!state.shieldInspected) p.push({ level: 'warning', title: 'Inspect the storm shield', detail: `Storm ETA ${Math.max(0, state.storm.eta).toFixed(0)}h.`, room: 'engineering' });
-    if (!state.storm.active && !state.storm.passed && state.storm.eta <= 24 && !state.shieldActive) p.push({ level: state.storm.eta <= 6 ? 'critical' : 'warning', title: 'Prepare for dust storm', detail: `Impact in ${Math.ceil(state.storm.eta)} hours.`, room: 'weather' });
-    if (state.power < 10) p.push({ level: 'critical', title: 'Battery reserve is low', detail: 'Pause optional loads.', room: 'engineering' });
-    if (state.oxygen < 4) p.push({ level: 'critical', title: 'Oxygen reserve low', detail: 'Restore generation immediately.', room: 'life-support' });
-    if (state.water < 6) p.push({ level: 'warning', title: 'Water reserve shrinking', detail: 'Check recycler and rationing.', room: 'life-support' });
-    if (state.food < 8) p.push({ level: 'warning', title: 'Food reserve shrinking', detail: 'Start or harvest greenhouse crops.', room: 'greenhouse' });
-    if (state.roverOut) p.push({ level: 'warning', title: 'Rover is outside', detail: 'Recall it before storm impact.', room: 'rover' });
-    if (state.radiation && !state.radiation.passed && state.radiation.eta <= 24 && !state.radiationShelter) p.push({ level: state.radiation.eta <= 6 ? 'critical' : 'warning', title: 'Prepare radiation shelter', detail: `Solar particle event in ${Math.ceil(state.radiation.eta)} hours.`, room: 'crew' });
-    state.priorities = p.slice(0, 5);
+    const add = (level, title, detail, room, score = 50) => p.push({ level, title, detail, room, score });
+    const stormEta = Math.max(0, Math.ceil(state.storm.eta));
+    const stormLeft = Math.max(0, Math.ceil((state.storm.duration || 18) - (state.storm.elapsed || 0)));
+    const radiationEta = Math.max(0, Math.ceil(state.radiation?.eta ?? 999));
+    const foodDays = (state.food / (state.rationing ? 3 : 4)).toFixed(1);
+
+    // Put immediate life-safety and active-hazard tasks at the top of the live queue.
+    if (state.radiation?.active && !state.radiationShelter) {
+      add('critical', 'SOLAR RADIATION LIVE — SHELTER CREW', `Radiation event is active. Secure the crew in the habitat now; about ${Math.max(0, Math.ceil(state.radiation.duration - state.radiation.elapsed))}h remain.`, 'crew', 120);
+    } else if (state.radiation && !state.radiation.passed && radiationEta <= 24 && !state.radiationShelter) {
+      add(radiationEta <= 6 ? 'critical' : 'warning', 'Prepare the radiation shelter', `Separate solar-particle event in ${radiationEta}h. The equipment shield does not protect the crew.`, 'crew', radiationEta <= 6 ? 112 : 78);
+    }
+
+    if (state.storm.active) {
+      add(state.power < 12 ? 'critical' : 'warning', `DUST FRONT LIVE — ${stormLeft}H LEFT`, `Solar input is down about 86%. Shield ${state.shieldActive ? 'ACTIVE' : 'OFF'}; battery ${state.power.toFixed(1)} / 48 kWh. Conserve power until the front passes.`, 'engineering', state.power < 12 ? 115 : 92);
+    } else if (!state.storm.passed && state.storm.eta <= 24) {
+      add(!state.shieldActive ? (stormEta <= 6 ? 'critical' : 'warning') : 'warning', !state.shieldActive ? `DUST FRONT IN ${stormEta}H — ACTIVATE SHIELD` : `DUST FRONT IN ${stormEta}H — PROTECT RESERVE`, `Estimated impact in ${stormEta}h. Shield ${state.shieldActive ? 'ACTIVE' : 'OFF'}; storm protection draws 0.45 kWh/hour.`, 'engineering', !state.shieldActive ? (stormEta <= 6 ? 110 : 86) : 75);
+    }
+
+    if (!state.panelsDeployed) add(state.power < 18 ? 'critical' : 'warning', 'Deploy solar array', 'Panels are stowed. Deploy them, then activate generation to collect daylight power.', 'engineering', state.power < 18 ? 108 : 68);
+    else if (!state.panelsActive) add(state.power < 18 ? 'critical' : 'warning', 'Activate solar generation', 'The array is not generating. Battery charging is automatic only after the panels are activated and in daylight.', 'engineering', state.power < 18 ? 108 : 70);
+    if (state.power < 8) add('critical', 'BATTERY CRITICAL — SHED OPTIONAL LOADS', `${state.power.toFixed(1)} kWh remains. Stop optional systems and protect essential life support.`, 'engineering', 118);
+    else if (state.power < 18) add('warning', 'Battery reserve low', `${state.power.toFixed(1)} / 48 kWh stored. The storm target is about 22 kWh; pause optional loads.`, 'engineering', 89);
+
+    if (state.oxygen <= 0) add('critical', 'OXYGEN DEPLETED — RESTORE SUPPLY', 'Crew health is falling. Start oxygen generation or use an emergency oxygen kit.', 'life-support', 119);
+    else if (state.oxygen < 4) add('critical', 'OXYGEN CRITICAL', `${state.oxygen.toFixed(1)} units remain. Start generation immediately.`, 'life-support', 116);
+    else if (!state.oxygenGenerator) add(state.oxygen < 6 ? 'critical' : 'warning', 'Start oxygen generator', `${state.oxygen.toFixed(1)} units remain. Stored oxygen is falling by about 4 units/day without generation.`, 'life-support', state.oxygen < 6 ? 105 : 64);
+    else if (state.oxygen < 6) add('warning', 'Oxygen reserve low', `${state.oxygen.toFixed(1)} units remain. Confirm the generator is running.`, 'life-support', 84);
+
+    if (state.water <= 0) add('critical', 'WATER DEPLETED — RESTORE RECYCLING', 'Crew health is falling. Restart water recovery and reduce optional water use.', 'life-support', 119);
+    else if (state.water < 6) add('critical', 'WATER CRITICAL', `${state.water.toFixed(1)} units remain. Keep the recycler running and pause nonessential water use.`, 'life-support', 109);
+    else if (!state.recyclerOn) add(state.water < 12 ? 'critical' : 'warning', 'Start water recycler', `${state.water.toFixed(1)} units remain. Without recycling, the crew uses about 4 units/day.`, 'life-support', state.water < 12 ? 104 : 62);
+    else if (state.water < 12) add('warning', 'Water reserve low', `${state.water.toFixed(1)} units remain. Recycling is online; keep it powered.`, 'life-support', 82);
+
+    if (state.food <= 0) add('critical', 'FOOD DEPLETED — RATION IMMEDIATELY', 'Crew health is falling. Enable rationing and keep the greenhouse operating if possible.', 'greenhouse', 119);
+    else if (state.cropReady) add('warning', 'HARVEST GREENHOUSE CROPS', 'Mature crops are ready. Harvest now to add 8 food rations.', 'greenhouse', state.food < 18 ? 103 : 60);
+    else if (state.food < 6) add('critical', 'FOOD CRITICAL — PROTECT RATIONS', `${state.food.toFixed(1)} rations remain (~${foodDays} days at current use). ${state.greenhouseOn ? `Crop growth is ${Math.round(state.cropProgress * 100)}%.` : 'Start the greenhouse now; crops take 48h to mature.'} Enable rationing if needed.`, 'greenhouse', 114);
+    else if (state.food < 12) add('warning', 'FOOD LOW — START PRODUCTION', `${state.food.toFixed(1)} rations remain (~${foodDays} days at 4/day). ${state.greenhouseOn ? `Greenhouse growth: ${Math.round(state.cropProgress * 100)}%.` : 'Start the greenhouse now; crops take 48h to mature.'} Consider rationing.`, 'greenhouse', 96);
+    else if (state.food < 18 && !state.greenhouseOn) add('warning', 'FOOD PRODUCTION NEEDED — START GREENHOUSE', `${state.food.toFixed(1)} rations remain (~${foodDays} days at current use). Crops take 48h, so start production before reserves become critical.`, 'greenhouse', 83);
+
+    if (!state.shieldInspected && !state.storm.passed) add('warning', 'Inspect the storm shield', `Confirm the shield is operational before the next dust front (${state.storm.active ? `${stormLeft}h remaining` : `T−${stormEta}h`}).`, 'engineering', !state.storm.passed && state.storm.eta <= 24 ? 87 : 45);
+    if (state.storm.passed && state.panelDust >= 10) add('warning', 'Dust front passed — clean solar panels', `The sky is clear, but ${state.panelDust.toFixed(0)}% dust coverage is reducing solar collection. Cleaning costs 1 material.`, 'engineering', 76);
+    if (state.storm.passed && state.panelHealth < 90) add('warning', 'Repair storm-damaged solar array', `Panel hardware health is ${state.panelHealth.toFixed(0)}%. Repairing costs 3 materials and restores 30% health.`, 'engineering', 74);
+    if (state.roverOut && (state.storm.active || (!state.storm.passed && state.storm.eta <= 12))) add('critical', 'Recall rover before the hazard', 'The rover is outside while surface conditions are dangerous.', 'rover', 111);
+    if (Math.min(...state.crewHealth) < 65) add('critical', 'CREW HEALTH CRITICAL', `Lowest crew health is ${Math.min(...state.crewHealth).toFixed(0)}%. Restore life support and use medical supplies if available.`, 'crew', 113);
+    else if (Math.min(...state.crewHealth) < 85) add('warning', 'Crew health deteriorating', `Lowest crew health is ${Math.min(...state.crewHealth).toFixed(0)}%. Check food, water, oxygen and fatigue.`, 'crew', 80);
+
+    state.priorities = p.sort((a, b) => b.score - a.score).slice(0, 6).map(({ score, ...item }) => item);
+  }
+
+  function checkResourceThresholdAlerts() {
+    if (state.hours - lastThresholdAlert < 3 || state.ended) return;
+    if (!Array.isArray(state.warningsSeen)) state.warningsSeen = [];
+    const seen = key => state.warningsSeen.includes(key);
+    const candidates = [];
+    const add = (key, score, title, body, severity, details, actions) => {
+      if (!seen(key)) candidates.push({ key, score, title, body, severity, details, actions });
+    };
+
+    // Early food prompts leave enough time for the 48-hour crop cycle.
+    if (state.food > 0 && state.food <= 6) {
+      add('resource-food-critical', 122, 'FOOD CRITICAL', `Only ${state.food.toFixed(1)} rations remain (~${(state.food / (state.rationing ? 3 : 4)).toFixed(1)} days at current use). Harvest if crops are ready; otherwise start production and enable rationing now.`, 'critical', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Daily use', state.rationing ? '3 rations/day (rationing)' : '4 rations/day'], ['Greenhouse', state.cropReady ? 'Crops ready to harvest' : state.greenhouseOn ? `${Math.round(state.cropProgress * 100)}% grown · 48h cycle` : 'OFF — start production now']], [{ label: state.cropReady ? 'Harvest crops' : 'Open greenhouse', action: state.cropReady ? 'harvest' : undefined, room: state.cropReady ? undefined : 'greenhouse' }, ...(!state.rationing ? [{ label: 'Enable rationing', action: 'ration' }] : []), { label: 'Acknowledge', close: true }]);
+    } else if (state.food > 0 && state.food <= 12) {
+      add('resource-food-low', 100, 'FOOD LOW — START PRODUCTION', `Food is down to ${state.food.toFixed(1)} rations (~${(state.food / (state.rationing ? 3 : 4)).toFixed(1)} days at current use). Crops take 48 hours to mature, so keep the greenhouse running and ration if needed.`, 'warning', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Greenhouse', state.cropReady ? 'Ready to harvest' : state.greenhouseOn ? `${Math.round(state.cropProgress * 100)}% grown` : 'OFF — start it now'], ['Rationing', state.rationing ? 'ACTIVE' : 'OFF']], [{ label: state.cropReady ? 'Harvest crops' : 'Open greenhouse', action: state.cropReady ? 'harvest' : undefined, room: state.cropReady ? undefined : 'greenhouse' }, ...(!state.rationing ? [{ label: 'Enable rationing', action: 'ration' }] : []), { label: 'Acknowledge', close: true }]);
+    } else if (state.food > 12 && state.food <= 18 && !state.greenhouseOn && !state.cropReady) {
+      add('resource-food-production', 82, 'FOOD PRODUCTION NEEDED', `${state.food.toFixed(1)} rations remain (~${(state.food / 4).toFixed(1)} days at current use). Start the greenhouse now; crops need 48 hours to mature.`, 'warning', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Crop cycle', '48 hours'], ['Greenhouse', 'OFF — production has not started']], [{ label: 'Start food production', room: 'greenhouse' }, { label: 'Acknowledge', close: true }]);
+    }
+
+    if (state.water > 0 && state.water <= 3) {
+      add('resource-water-critical', 121, 'WATER CRITICAL', `Only ${state.water.toFixed(1)} water units remain. Crew survival is at risk; restart recycling and reduce nonessential water use.`, 'critical', [['Water remaining', `${state.water.toFixed(1)} units`], ['Recycler', state.recyclerOn ? 'ONLINE' : 'OFFLINE']], [{ label: state.recyclerOn ? 'Open life support' : 'Start recycler', action: state.recyclerOn ? undefined : 'recycler-on', room: 'life-support' }, { label: 'Acknowledge', close: true }]);
+    } else if (state.water > 3 && state.water <= 12) {
+      add('resource-water-low', 91, 'WATER RESERVE LOW', `Water is down to ${state.water.toFixed(1)} units. The crew uses about 4 units/day before recovery; keep the recycler online.`, state.water <= 6 ? 'critical' : 'warning', [['Water remaining', `${state.water.toFixed(1)} units`], ['Recycler', state.recyclerOn ? 'ONLINE' : 'OFF — start it now']], [{ label: state.recyclerOn ? 'Open life support' : 'Start recycler', action: state.recyclerOn ? undefined : 'recycler-on', room: 'life-support' }, { label: 'Acknowledge', close: true }]);
+    }
+
+    if (state.oxygen > 0 && state.oxygen <= 3) {
+      add('resource-oxygen-critical', 124, 'OXYGEN CRITICAL', `Only ${state.oxygen.toFixed(1)} oxygen units remain. Start the generator or use an emergency oxygen kit immediately.`, 'critical', [['Oxygen remaining', `${state.oxygen.toFixed(1)} units`], ['Generator', state.oxygenGenerator ? 'ONLINE' : 'OFFLINE']], [{ label: state.oxygenGenerator ? 'Open life support' : 'Start generator', action: state.oxygenGenerator ? undefined : 'oxygen-on', room: 'life-support' }, { label: 'Acknowledge', close: true }]);
+    } else if (state.oxygen > 3 && state.oxygen <= 6) {
+      add('resource-oxygen-low', 93, 'OXYGEN RESERVE LOW', `Only ${state.oxygen.toFixed(1)} oxygen units remain. Confirm the generator is running before the reserve becomes critical.`, state.oxygen <= 4 ? 'critical' : 'warning', [['Oxygen remaining', `${state.oxygen.toFixed(1)} units`], ['Generator', state.oxygenGenerator ? 'ONLINE' : 'OFFLINE']], [{ label: state.oxygenGenerator ? 'Open life support' : 'Start generator', action: state.oxygenGenerator ? undefined : 'oxygen-on', room: 'life-support' }, { label: 'Acknowledge', close: true }]);
+    }
+
+    if (state.power > 0 && state.power <= 5) {
+      add('resource-power-critical', 125, 'BATTERY CRITICAL', `Only ${state.power.toFixed(1)} kWh remain. Stop optional loads and protect oxygen, water recovery, and shield power.`, 'critical', [['Battery', `${state.power.toFixed(1)} / 48 kWh`], ['Solar array', state.panelsActive ? 'ACTIVE' : 'OFF'], ['Dust front', state.storm.active ? `LIVE · ${Math.max(0, Math.ceil(state.storm.duration - state.storm.elapsed))}h left` : state.storm.passed ? 'PASSED' : `T−${Math.ceil(state.storm.eta)}h`]], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Acknowledge', close: true }]);
+    } else if (state.power > 5 && state.power <= 18) {
+      add('resource-power-low', 95, 'BATTERY RESERVE LOW', `Battery is down to ${state.power.toFixed(1)} kWh. Pause optional loads and confirm the solar array is generating.`, state.power <= 10 ? 'critical' : 'warning', [['Battery', `${state.power.toFixed(1)} / 48 kWh`], ['Solar array', state.panelsActive ? 'ACTIVE' : 'OFF'], ['Storm', state.storm.active ? `LIVE · ${Math.max(0, Math.ceil(state.storm.duration - state.storm.elapsed))}h left` : state.storm.passed ? 'PASSED' : `T−${Math.ceil(state.storm.eta)}h`]], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Acknowledge', close: true }]);
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    const alert = candidates[0];
+    if (!alert) return;
+    state.warningsSeen.push(alert.key);
+    lastThresholdAlert = state.hours;
+    const { key, score, ...payload } = alert;
+    event(payload.title, payload.body, payload.severity, payload.details, payload.actions);
   }
 
   function event(title, body, severity = 'warning', details = [], actions = []) {
@@ -248,6 +329,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
       }
     }
     state.hours += dt;
+    checkResourceThresholdAlerts();
     if (Math.min(...state.crewHealth) <= 0) { endMission('Crew survival lost. Review the mission log to identify the missed survival warning.'); return; }
     if (state.hours >= state.missionDays * 24) endMission('completed');
   }
@@ -270,9 +352,10 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     let remaining = duration, advanced = 0;
     while (remaining > 0.0001 && !state.ended) {
       const dt = Math.min(1, remaining), oldEta = state.storm.eta, oldRadiationEta = state.radiation.eta;
-      const oldStormActive = state.storm.active, oldRadiationActive = state.radiation.active;
+      const oldStormActive = state.storm.active, oldRadiationActive = state.radiation.active, oldEvent = state.lastEvent;
       tick(dt); advanced += dt; remaining -= dt;
       if (state.ended) break;
+      if (!options.force && state.lastEvent !== oldEvent) break;
       if (!options.force && (oldStormActive !== state.storm.active || oldRadiationActive !== state.radiation.active)) break;
       if (!options.force && ((!state.storm.active && !state.storm.passed && [24, 12, 6, 1].some(t => oldEta > t && state.storm.eta <= t)) || (!state.radiation.active && !state.radiation.passed && [24, 12, 6, 1].some(t => oldRadiationEta > t && state.radiation.eta <= t)))) break;
     }
@@ -383,7 +466,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
   }
 
   function reset(days = state.missionDays, destination = state.destination || 'moon') {
-    state = initialState(days, destination); lastSupplyAlert = -99; lastPowerAlert = -99;
+    state = initialState(days, destination); lastSupplyAlert = -99; lastPowerAlert = -99; lastThresholdAlert = -99;
     log(`Mission systems initialized for ${state.destination === 'mars' ? 'Mars' : 'the Moon'}. Solar panels are stowed and OFF; battery reserve is 28/48 kWh.`);
     log('Forecast: fictionalized lunar dust-front gameplay hazard expected in approximately 30 hours.', 'warning');
     log('Separate solar particle event forecast in 84 hours. Dust hazard and radiation hazard require different responses.', 'warning');
@@ -425,7 +508,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     if (!Array.isArray(state.crewAssignments)) state.crewAssignments = ['engineering', 'water', 'greenhouse', 'research'];
     if (!Array.isArray(state.crewPaused)) state.crewPaused = [false, false, false, false];
     if (state.endReason === undefined) state.endReason = state.ended ? (state.won ? 'completed' : 'mission-failed') : null;
-    lastSupplyAlert = -99; lastPowerAlert = -99;
+    lastSupplyAlert = -99; lastPowerAlert = -99; lastThresholdAlert = -99;
     log('Saved mission loaded on this device.', 'success'); refresh(); return true;
   }
 
