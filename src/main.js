@@ -4,7 +4,16 @@ import { createLunarScene } from './scene.js';
 import { createAudio } from './audio.js';
 
 const $ = selector => document.querySelector(selector);
-function estimateStormReserve(s){const hours=s.storm.passed?6:s.storm.active?Math.max(0,s.storm.duration-s.storm.elapsed):s.storm.duration;const hourly=.52+(s.oxygenGenerator?.12:0)+(s.recyclerOn?.11:0)+(s.greenhouseOn?.18:0)+(s.roverOut?.12:0)+(s.storm.passed?0:.32);return Math.min(48,Math.ceil(hourly*hours+2));}
+function estimateStormReserve(s) {
+  const active = job => (s.crewAssignments || []).some((assigned, i) => assigned === job && !s.crewPaused?.[i]);
+  const hours = s.storm.passed ? 6 : s.storm.active ? Math.max(0, s.storm.duration - s.storm.elapsed) : s.storm.duration;
+  const baseLoad = Math.max(0.35, 0.52 - (active('engineering') ? 0.06 : 0));
+  const oxygenLoad = s.oxygenGenerator && s.oxygen < 12 ? 0.12 : 0;
+  const greenhouseLoad = s.greenhouseOn && !s.cropReady ? 0.18 : 0;
+  const hourly = baseLoad + oxygenLoad + (s.recyclerOn ? 0.11 : 0) + greenhouseLoad + (s.roverOut ? 0.12 : 0) + (s.storm.passed ? 0 : 0.32);
+  return Math.min(48, Math.ceil(hourly * hours + 2));
+}
+
 const audio = createAudio();
 let currentRoom = 'engineering';
 let toastTimer;
@@ -15,13 +24,13 @@ const rooms = {
     kicker: 'ROOM 03 / ELECTRICAL SYSTEMS', title: 'Engineering & Power',
     description: 'Deploy the solar array, activate generation, and manage the battery budget before the storm.',
     status: s => s.panelsActive ? 'ARRAY GENERATING' : s.panelsDeployed ? 'DEPLOYED / OFFLINE' : 'STOWED / OFFLINE',
-    hint: s => s.storm.active ? `Shield is holding. This ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}h front draws 0.32 kWh/hour; solar input is down about ${Math.round((1-s.storm.solarFactor)*100)}%. Pause optional loads.` : !s.storm.passed && s.storm.eta <= 1 && !s.shieldActive ? 'FINAL WARNING: activate the inspected shield now; it must be armed at impact.' : !s.storm.passed && s.storm.eta <= 24 && !s.shieldActive ? `Inspect the shield now, but keep it OFF until T−1h. Current forecast reserve target: ${estimateStormReserve(s)} kWh.` : !s.storm.passed && s.storm.eta <= 24 && s.shieldActive ? 'Shield armed in low-power standby (0.03 kWh/hour). Keep the array online; full shield draw begins during the storm.' : s.panelsActive ? `Panels automatically charge in daylight. Monitor daily input/output; current forecast reserve target is ${estimateStormReserve(s)} kWh.` : s.panelsDeployed ? 'Activate the array to start collecting daylight energy; battery storage is automatic.' : 'Deploy the array, then activate solar generation. The battery stores energy automatically up to 48 kWh.',
+    hint: s => s.storm.active ? `${s.shieldActive?'Shield is holding':'SHIELD OFF — RECOVERABLE ARRAY DAMAGE IS OCCURRING'}. This ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}h front draws 0.32 kWh/hour when shielded; solar input is down about ${Math.round((1-s.storm.solarFactor)*100)}%. Pause optional loads.` : !s.storm.passed && s.storm.eta <= 1 && !s.shieldActive ? 'FINAL WARNING: activate the inspected shield now to avoid major but recoverable array damage.' : !s.storm.passed && s.storm.eta <= 24 && !s.shieldActive ? `Inspect the shield now, but keep it OFF until T−1h. Current forecast reserve target: ${estimateStormReserve(s)} kWh.` : !s.storm.passed && s.storm.eta <= 24 && s.shieldActive ? 'Shield armed in low-power standby (0.03 kWh/hour). Keep the array online; full shield draw begins during the storm.' : s.panelsActive ? `Panels automatically charge in daylight. Monitor daily input/output; current forecast reserve target is ${estimateStormReserve(s)} kWh.` : s.panelsDeployed ? 'Activate the array to start collecting daylight energy; battery storage is automatic.' : 'Deploy the array, then activate solar generation. The battery stores energy automatically up to 48 kWh.',
     actions: s => [
       !s.panelsDeployed && action('deploy','Deploy solar array','Unfold the two panel banks. Visible mechanical deployment.','DEPLOY ARRAY','power','deploy'),
       s.panelsDeployed && !s.panelsActive && action('activate-panels','Activate solar generation','Up to 2 kWh per daylight hour; 12 daylight hours means 24 kWh maximum on a clear day.','ACTIVATE ARRAY','power','power-on'),
       s.panelsActive && action('deactivate-panels','Switch array electronics off','Stop output only for a deliberate power trade-off.','POWER DOWN','standard','power-off'),
       !s.shieldInspected && action('inspect-shield','Inspect storm shield','Run diagnostics and confirm energy demand.','RUN DIAGNOSTICS','standard','scan'),
-      s.shieldInspected && !s.shieldActive && action('activate-shield','Arm shield',`0.03 kWh/hour standby; 0.32 kWh/hour during this ${s.storm.duration}h front (~${(s.storm.duration*0.32).toFixed(1)} kWh). Best activated at T−1h.`,'ARM SHIELD','risk','shield'),
+      s.shieldInspected && !s.shieldActive && action('activate-shield','Arm shield',`0.03 kWh/hour standby; 0.32 kWh/hour during this ${s.storm.duration}h front (~${(s.storm.duration*0.32).toFixed(1)} kWh). ${s.storm.active?'Activate now to reduce further array damage.':'Best activated at T−1h.'}`,'ARM SHIELD','risk','shield'),
       s.shieldActive && !s.storm.active && !s.storm.passed && action('deactivate-shield','Disarm shield','Disarm before impact to save standby power; re-arm at T−1h. Cannot lower it during the storm.','DISARM SHIELD','standard','shield'),
       s.panelsDeployed && s.panelDust > 4 && action('clean-panels','Clean panel surfaces',`Remove dust coverage (${s.panelDust.toFixed(0)}%). Costs 1 material.`,'CLEAN ARRAY · 1 MAT','standard','mechanical'),
       s.panelHealth < 95 && action('repair-panels','Repair solar array',`Restore panel hardware from ${s.panelHealth.toFixed(0)}% health. Costs 3 materials.`,'REPAIR · 3 MAT','standard','mechanical')
@@ -42,11 +51,11 @@ const rooms = {
   },
   greenhouse: {
     kicker: 'ROOM 05 / FOOD SECURITY', title: 'Greenhouse',
-    description: 'Crops take time, water, and electricity. Start production early and harvest when mature.',
+    description: 'Crops need power and water. An active greenhouse specialist shortens the crop cycle to 48 hours; without one it takes 72 hours.',
     status: s => s.cropReady ? 'HARVEST READY' : s.greenhouseOn ? `GROWTH ${Math.min(100,Math.round(s.cropProgress*100))}%` : 'GROWTH PAUSED',
-    hint: s => s.greenhouseOn ? 'Crop growth continues as time advances. Keep water and power available.' : 'Start the greenhouse before food reserves become critical.',
+    hint: s => s.cropReady ? 'Crops are mature. Harvest +8 rations; grow-light and irrigation draw are paused until the next crop cycle.' : s.greenhouseOn ? `Crop growth continues. Current crop cycle is ${(s.crewAssignments||[]).some((j,i)=>j==='greenhouse'&&!s.crewPaused?.[i])?48:72} hours; keep water and power available.` : 'Start the greenhouse before food reserves become critical.',
     actions: s => [
-      !s.greenhouseOn && action('greenhouse-on','Start greenhouse','Consumes power and water; crops mature after 48 hours.','START GROWTH','power','power-on'),
+      !s.greenhouseOn && action('greenhouse-on','Start greenhouse',`Consumes power and water; crops mature after ${(s.crewAssignments||[]).some((j,i)=>j==='greenhouse'&&!s.crewPaused?.[i])?48:72} hours with current crew tasking.`,`START GROWTH`,'power','power-on'),
       s.greenhouseOn && action('greenhouse-off','Pause greenhouse','Save energy and water. Crop growth pauses.','PAUSE GROWTH','standard','power-off'),
       s.cropReady && action('harvest','Harvest mature crops','Collect 8 food rations from the greenhouse.','HARVEST · +8 FOOD','power','harvest'),
       !s.rationing && action('ration','Activate crew rationing','Reduce food use by 25% for the next 24 hours.','ENABLE RATIONING','standard','click'),
@@ -71,11 +80,11 @@ const rooms = {
     kicker: 'ROOM 02 / SURFACE EXPLORATION', title: 'Rover Bay',
     description: 'Explore nearby terrain for materials and science samples. Do not launch near a storm.',
     status: s => s.roverOut ? `SURVEY IN PROGRESS · ${Math.ceil(s.roverMission)}H` : s.roverReady ? 'ROVER DOCKED' : 'ROVER UNAVAILABLE',
-    hint: s => s.storm.active || (!s.storm.passed && s.storm.eta < 8) ? 'Surface conditions are unsafe. Keep the rover in the habitat.' : 'A rover survey costs 6 kWh and returns 2 materials plus 1 sample.',
+    hint: s => s.radiation.active || s.radiationShelter || (!s.radiation.passed && s.radiation.eta <= 2) ? 'Solar-radiation safety window: keep the crew sheltered and postpone surface operations.' : s.storm.active || (!s.storm.passed && s.storm.eta < 8) ? 'Dust-front conditions are unsafe. Keep the rover docked.' : (s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i]) ? 'Rover specialist reduces a survey to 5 kWh / 2h and regolith collection to 2.5 kWh / 1.5h.' : 'A rover survey costs 6 kWh and returns 2 materials plus 1 sample after 3h.',
     actions: s => [
-      !s.roverOut && s.roverReady && action('rover-launch','Launch rover survey','Costs 6 kWh. Automated 3-hour survey returns 2 materials and a sample.','LAUNCH ROVER · 6 KWH','risk','rover-launch'),
+      !s.roverOut && s.roverReady && !s.radiation.active && !s.radiationShelter && (s.radiation.passed || s.radiation.eta > 2) && action('rover-launch','Launch rover survey',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'Costs 5 kWh. Rover specialist completes a 2-hour survey and returns 2 materials plus a sample.':'Costs 6 kWh. Automated 3-hour survey returns 2 materials and a sample.',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'LAUNCH ROVER · 5 KWH':'LAUNCH ROVER · 6 KWH','risk','rover-launch'),
       s.roverOut && action('rover-recall','Recall rover immediately','Cancel the survey and return without its sample.','RECALL ROVER','risk','rover-return'),
-      !s.roverOut && s.roverReady && action('collect-materials','Collect nearby regolith','Costs 3 kWh and 2 hours. Gain 2 materials.','COLLECT · 3 KWH / 2H','standard','rover-launch')
+      !s.roverOut && s.roverReady && !s.radiation.active && !s.radiationShelter && (s.radiation.passed || s.radiation.eta > 2) && action('collect-materials','Collect nearby regolith',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'Costs 2.5 kWh and 1.5 hours. Gain 2 materials.':'Costs 3 kWh and 2 hours. Gain 2 materials.',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'COLLECT · 2.5 KWH / 1.5H':'COLLECT · 3 KWH / 2H','standard','rover-launch')
     ].filter(Boolean).slice(0,5)
   },
   research: {
@@ -84,15 +93,15 @@ const rooms = {
     status: s => `${s.samples} SAMPLE${s.samples===1?'':'S'} · ${s.researchBonus?'MODEL ENHANCED':'BASELINE MODEL'}`,
     hint: s => s.samples > 0 ? 'Analyze a sample to improve the forecast and record a finding.' : 'Launch a safe rover survey to collect a lunar sample.',
     actions: s => [
-      s.samples > 0 && action('analyze-sample','Analyze lunar sample','Costs 2 kWh and 1 hour. Improves forecast confidence.','ANALYZE · 2 KWH','power','scan'),
-      action('run-forecast','Run enhanced weather analysis','Costs 1 kWh and 30 minutes. Refines arrival estimate.','UPDATE FORECAST · 1 KWH','standard','scan')
+      s.samples > 0 && action('analyze-sample','Analyze lunar sample',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'Costs 1.5 kWh and 1 hour with the research specialist.':'Costs 2 kWh and 1 hour. Improves forecast confidence.',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'ANALYZE · 1.5 KWH':'ANALYZE · 2 KWH','power','scan'),
+      action('run-forecast','Run enhanced weather analysis',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'Costs 0.5 kWh and 30 minutes with the research specialist. Adds an early T−36h warning.':'Costs 1 kWh and 30 minutes. Adds an early T−36h warning.',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'UPDATE FORECAST · 0.5 KWH':'UPDATE FORECAST · 1 KWH','standard','scan')
     ].filter(Boolean).slice(0,5)
   },
   weather: {
     kicker: 'MISSION INTELLIGENCE / WEATHER', title: 'Storm Forecast',
     description: 'Track the fictional dust-front gameplay hazard and the separate solar-particle radiation event. Both timelines interrupt long time jumps.',
-    status: s => s.radiation.active ? `RADIATION LIVE · ${Math.max(0, Math.ceil(s.radiation.duration - s.radiation.elapsed))}H LEFT` : s.storm.active ? `DUST FRONT LIVE · ${Math.max(0, Math.ceil(s.storm.duration - s.storm.elapsed))}H LEFT` : s.storm.passed ? 'DUST FRONT PASSED' : !s.radiation.passed && s.radiation.eta <= 6 ? 'RADIATION CRITICAL' : s.storm.eta <= 6 ? 'DUST FRONT IMMINENT' : s.storm.eta <= 24 ? 'DUST FRONT WARNING' : 'HAZARDS MONITORED',
-    hint: s => s.radiation.active && !s.radiationShelter ? 'SOLAR RADIATION LIVE: shelter the crew inside immediately; the equipment shield is not crew protection.' : s.storm.active ? `DUST FRONT LIVE: ${Math.max(0, Math.ceil(s.storm.duration - s.storm.elapsed))}h remain. Solar input is down about ${Math.round((1-s.storm.solarFactor)*100)}%; conserve battery.` : s.storm.passed ? `DUST FRONT PASSED: ${s.panelDust.toFixed(0)}% panel dust and ${s.panelHealth.toFixed(0)}% panel health. Clean/repair the array.` : !s.radiation.passed && s.radiation.eta <= 12 && !s.radiationShelter ? 'Solar particle event approaching: secure the crew shelter. This is separate from the dust front.' : s.storm.eta <= 12 ? 'Prepare the equipment shield, recall the rover, and pause optional loads.' : 'Track the dust-front and solar-particle timelines separately.',
+    status: s => s.radiation.active ? `RADIATION LIVE · ${Math.max(0, Math.ceil(s.radiation.duration - s.radiation.elapsed))}H LEFT` : s.storm.active ? `DUST FRONT LIVE · ${Math.max(0, Math.ceil(s.storm.duration - s.storm.elapsed))}H LEFT` : !s.radiation.passed && s.radiation.eta <= 6 ? 'RADIATION CRITICAL' : !s.radiation.passed && s.radiation.eta <= 24 ? 'RADIATION WARNING' : !s.storm.passed && s.storm.eta <= 6 ? 'DUST FRONT IMMINENT' : !s.storm.passed && s.storm.eta <= 24 ? 'DUST FRONT WARNING' : s.storm.passed ? 'ALL DUST FRONTS COMPLETE' : 'HAZARDS MONITORED',
+    hint: s => s.radiation.active ? (s.radiationShelter ? 'SOLAR RADIATION LIVE: crew shelter is secured. Keep the crew inside until the event passes.' : 'SOLAR RADIATION LIVE: shelter the crew inside immediately; the equipment shield is not crew protection.') : s.storm.active ? `DUST FRONT LIVE: ${Math.max(0, Math.ceil(s.storm.duration - s.storm.elapsed))}h remain. Solar input is down about ${Math.round((1-s.storm.solarFactor)*100)}%; conserve battery.` : !s.radiation.passed && s.radiation.eta <= 24 && !s.radiationShelter ? 'Solar particle event approaching: secure the crew shelter. This is separate from the dust front.' : !s.storm.passed && s.storm.eta <= 12 ? 'Prepare the equipment shield, recall the rover, and pause optional loads.' : s.storm.passed ? `All dust fronts passed: ${s.panelDust.toFixed(0)}% panel dust and ${s.panelHealth.toFixed(0)}% panel health. Clean/repair the array; keep tracking any remaining radiation warning.` : 'Track the dust-front and solar-particle timelines separately.',
     actions: s => [
       !s.shieldInspected && action('inspect-shield','Inspect storm shield','Run diagnostics before the front arrives.','INSPECT SHIELD','standard','scan'),
       s.shieldInspected && !s.shieldActive && !s.storm.passed && action('activate-shield','Arm storm shield',`0.03 kWh/hour standby; 0.32 kWh/hour during this ${s.storm.duration}h front. Arm by T−1h and preserve enough power for essential systems.`,'ARM SHIELD','risk','shield'),
@@ -153,10 +162,11 @@ function updateState(state) {
   const fmt=n=>Math.max(0,Number(n)).toFixed(1);
   const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
   const meter=(id,value)=>{const el=document.getElementById(id);if(el)el.style.width=`${Math.max(0,Math.min(100,value))}%`;};
+  const elapsed=Number.isFinite(state.missionElapsed)?state.missionElapsed:Math.max(0,state.hours-6);
   const sol=Math.floor(state.hours/24)+1,hour=Math.floor(state.hours%24);
   const clock=`SOL ${String(sol).padStart(2,'0')} · ${String(hour).padStart(2,'0')}:00`;
-  set('top-clock',clock);set('hud-clock',clock);set('mission-day-label',`DAY ${Math.min(state.missionDays,Math.floor(state.hours/24)+1)} OF ${state.missionDays}`);
-  $('#mission-progress').style.width=`${Math.min(100,state.hours/(state.missionDays*24)*100)}%`;
+  set('top-clock',clock);set('hud-clock',clock);set('mission-day-label',`DAY ${Math.min(state.missionDays,Math.floor(elapsed/24)+1)} OF ${state.missionDays}`);
+  $('#mission-progress').style.width=`${Math.min(100,elapsed/(state.missionDays*24)*100)}%`;
   set('power-value',fmt(state.power));set('power-percent',`${Math.round(state.power/48*100)}%`);meter('power-meter',state.power/48*100);set('power-sub',`${state.power.toFixed(0)} stored · 24 kWh/day max`);
   set('oxygen-value',fmt(state.oxygen));set('oxygen-percent',`${Math.round(state.oxygen/12*100)}%`);meter('oxygen-meter',state.oxygen/12*100);
   set('water-value',fmt(state.water));set('water-percent',`${Math.round(state.water/40*100)}%`);meter('water-meter',state.water/40*100);
@@ -165,7 +175,7 @@ function updateState(state) {
   set('stage-power',fmt(state.power));set('crew-health-label',`CREW ${Math.round(Math.min(...state.crewHealth))}%`);
   set('crew-link-text',`${Math.round(Math.min(...state.crewHealth))}% MINIMUM HEALTH`);
   set('readout-array',state.panelsActive?`ONLINE · ${state.panelHealth.toFixed(0)}%`:state.panelsDeployed?'DEPLOYED / OFF':'STOWED');
-  set('readout-shield',state.storm.active?(state.shieldActive?`ACTIVE · ${state.shieldHealth.toFixed(0)}%`:'FAILED · OFF'):state.shieldActive&&!state.storm.passed?'ARMED · STANDBY':'STANDBY');
+  set('readout-shield',state.storm.active?(state.shieldActive?`ACTIVE · ${state.shieldHealth.toFixed(0)}%`:'OFF · ARRAY AT RISK'):state.shieldActive&&!state.storm.passed?'ARMED · STANDBY':'STANDBY');
   set('readout-oxygen',state.oxygenGenerator?'GENERATING':'OFFLINE');set('readout-rover',state.roverOut?`OUT · ${Math.ceil(state.roverMission)}H`:'DOCKED');
   const radiationAlert=state.radiation.active||(!state.radiation.passed&&state.radiation.eta<=24);
   const stormLeft=Math.max(0,Math.ceil((state.storm.duration||4)-(state.storm.elapsed||0)));
@@ -183,7 +193,7 @@ function updateState(state) {
   const topStatusNode=$('#top-status');
   topStatusNode.className=state.ended?'status-ended':state.radiation.active||state.storm.active?'status-danger':radiationStatus||(!state.storm.passed&&state.storm.eta<=24)?'status-warning':state.storm.passed?'status-passed':'';
   topStatusNode.title=`Dust front: ${state.storm.active?`LIVE, ${stormLeft}h remaining`:state.storm.passed?'all fronts passed':`next in ${Math.ceil(state.storm.eta)}h (${state.storm.duration}h expected)`}. Solar particle event: ${state.radiation.active?`LIVE, ${radiationLeft}h remaining`:state.radiation.passed?'PASSED':`in ${Math.ceil(state.radiation.eta)}h (${state.radiation.duration}h expected)`}.`;
-  $('#mini-weather').className=`mini-weather ${state.radiation.active||state.storm.active||state.storm.eta<=6||(!state.radiation.passed&&state.radiation.eta<=6)?'weather-danger':state.storm.eta<=24||(!state.radiation.passed&&state.radiation.eta<=24)?'weather-warn':''}`;
+  $('#mini-weather').className=`mini-weather ${state.radiation.active||state.storm.active||(!state.storm.passed&&state.storm.eta<=6)||(!state.radiation.passed&&state.radiation.eta<=6)?'weather-danger':(!state.storm.passed&&state.storm.eta<=24)||(!state.radiation.passed&&state.radiation.eta<=24)?'weather-warn':''}`;
   if(scene)scene.update(state);
   renderRoom(state);updateActivityHUD(state);
 }
@@ -263,12 +273,12 @@ function renderRoom(state=game.getState()) {
       const who=document.createElement('div');who.className='crew-assignment-who';who.innerHTML=`<b>${names[i]}</b><small>${state.crewPaused?.[i]?'JOB PAUSED':'ASSIGNED · '+(state.crewAssignments?.[i]||jobs[i+1][0]).toUpperCase()}</small>`;
       const select=document.createElement('select');select.setAttribute('aria-label',`Assign ${names[i]}`);select.className='crew-job-select';
       for(const [value,label] of jobs){const option=document.createElement('option');option.value=value;option.textContent=label;option.selected=value===(state.crewAssignments?.[i]||['engineering','water','greenhouse','research'][i]);select.append(option);}
-      select.addEventListener('change',()=>game.assignCrew(i,select.value));
+      select.addEventListener('change',()=>{if(!game.assignCrew(i,select.value))renderRoom(game.getState());});
       const pause=document.createElement('button');pause.className='crew-job-pause';pause.textContent=state.crewPaused?.[i]?'RESUME':'PAUSE';pause.title=state.crewPaused?.[i]?'Resume this crew member’s job':'Pause job and free this crew member for reassignment';
       pause.addEventListener('click',()=>game.toggleCrewPause(i));
       row.append(who,select,pause);assignments.append(row);
     }
-    const note=document.createElement('p');note.className='crew-assignment-note';note.textContent='Crew walk to their assigned station. Pause a job to hold that crew member in place; choosing a new task automatically resumes them.';assignments.append(note);list.append(assignments);
+    const note=document.createElement('p');note.className='crew-assignment-note';note.textContent='Crew walk to their assigned station. Active roles affect the simulation: Engineering saves 0.06 kWh/h; each Water Collection specialist adds 0.08 water units/h for 0.08 kWh/h when surface conditions are safe (max 2); a Greenhouse specialist enables a 48h crop cycle (72h without); Crew Quarters halves fatigue growth; a Rover specialist reduces survey time and cost; a Research specialist lowers analysis costs. Pause or reassign a job to change these effects.';assignments.append(note);list.append(assignments);
   }
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.room===currentRoom));
 }
@@ -286,19 +296,25 @@ function updateActivityHUD(s=game.getState()){
   const hour=s.hours%24, daylight=hour>=6&&hour<18;
   const weatherFactor=s.storm.active?s.storm.solarFactor:(!s.storm.passed&&s.storm.eta<24?.9:1);
   const solarNow=s.panelsActive&&daylight?2*(s.panelHealth/100)*(1-s.panelDust/100)*weatherFactor:0;
-  const dailySolar=s.panelsActive?24*(s.panelHealth/100)*(1-s.panelDust/100)*(s.storm.active ? s.storm.solarFactor : (!s.storm.passed&&s.storm.eta<24 ? .9 : 1)):0;
+  const solarBase=s.panelsActive?24*(s.panelHealth/100)*(1-s.panelDust/100):0;
+  const stormHoursToday=s.storm.active?Math.min(12,Math.max(0,s.storm.duration-s.storm.elapsed)):0;
+  const dailyWeatherFactor=s.storm.active?1-(1-s.storm.solarFactor)*(stormHoursToday/12):(!s.storm.passed&&s.storm.eta<24?.9:1);
+  const dailySolar=solarBase*dailyWeatherFactor;
   const activeHours=s.storm.active?Math.min(24,Math.max(0,s.storm.duration-s.storm.elapsed)):0;
   const shieldDailyLoad=s.shieldActive?(s.storm.active?activeHours*0.32:s.storm.passed?0:24*0.03):0;
-  const dailyLoad=12.48+(s.oxygenGenerator?2.88:0)+(s.recyclerOn?2.64:0)+(s.greenhouseOn?4.32:0)+shieldDailyLoad+(s.roverOut?2.88:0);
+  const activeCrew=job=>(s.crewAssignments||[]).some((assigned,i)=>assigned===job&&!s.crewPaused?.[i]);
+  const waterCrewCount=Math.min(2,(s.crewAssignments||[]).filter((assigned,i)=>assigned==='water'&&!s.crewPaused?.[i]).length);
+  const waterCollectorSafe=!s.storm.active&&(s.storm.passed||s.storm.eta>8)&&!s.radiation.active&&(s.radiation.passed||s.radiation.eta>2)&&!s.radiationShelter&&s.power>0;
+  const dailyLoad=Math.max(.35,.52-(activeCrew('engineering')?.06:0))*24+((s.oxygenGenerator&&s.oxygen<12)?2.88:0)+(s.recyclerOn?2.64:0)+((s.greenhouseOn&&!s.cropReady)?4.32:0)+shieldDailyLoad+(s.roverOut?2.88:0)+(waterCollectorSafe?waterCrewCount*.08*24:0);
   const views={
-    engineering:{icon:'ϟ',kicker:'ENERGY CONTROL / LIVE',title:'Power grid telemetry',metrics:[['SOLAR OUTPUT',`${solarNow.toFixed(1)} kWh/h`,s.panelsActive?solarNow/2*100:0],['DAILY BALANCE',`${(dailySolar-dailyLoad).toFixed(1)} kWh`,Math.max(0,Math.min(100,(dailySolar-dailyLoad+10)/20*100))]],note:`Battery ${s.power.toFixed(1)}/48 kWh · next front in ${Math.ceil(s.storm.eta)}h (${s.storm.duration}h expected). Shield standby 0.03 kWh/h; active draw 0.32 kWh/h.`},
-    'life-support':{icon:'◌',kicker:'LIFE SUPPORT / LIVE',title:'Crew survival systems',metrics:[['OXYGEN',`${s.oxygen.toFixed(1)} units`,s.oxygen/12*100],['WATER',`${s.water.toFixed(1)} units`,s.water/40*100]],note:`O₂ generator ${s.oxygenGenerator?'ONLINE':'OFFLINE'} · Recycler ${s.recyclerOn?'ONLINE':'OFFLINE'}. Crew demand is continuous.`},
-    greenhouse:{icon:'✿',kicker:'BIOREGENERATION / LIVE',title:'Crop growth chamber',metrics:[['GROWTH',s.cropReady?'READY TO HARVEST':`${Math.round(s.cropProgress*100)}%`,s.cropProgress*100],['FOOD RESERVE',`${s.food.toFixed(1)} rations`,s.food/40*100]],note:'A full crop cycle takes 48h and returns +8 rations. Keep power and water available.'},
-    crew:{icon:'♧',kicker:'CREW TELEMETRY / LIVE',title:'Crew status',metrics:[['LOWEST HEALTH',`${Math.min(...s.crewHealth).toFixed(0)}%`,Math.min(...s.crewHealth)],['FATIGUE',`${s.crewFatigue.toFixed(0)}%`,s.crewFatigue]],note:s.radiation.active?(s.radiationShelter?'Crew sheltered during the solar particle event.':'RADIATION EVENT ACTIVE — shelter the crew now.'):`Radiation event in ${Math.ceil(s.radiation.eta)}h · ${s.radiationShelter?'Shelter secured':'Shelter not secured'}.`},
-    rover:{icon:'⌖',kicker:'SURFACE OPERATIONS / LIVE',title:'Rover mission telemetry',metrics:[['ROVER STATUS',s.roverOut?'OUT ON SURVEY':'DOCKED',s.roverOut?65:100],['ENERGY COST','6 kWh / survey',Math.min(100,s.power/6*100)]],note:s.storm.active||(!s.storm.passed&&s.storm.eta<8)?'Surface hazard is too close. Keep the rover docked.':'A survey returns +2 materials and +1 sample after 3h.'},
-    research:{icon:'◇',kicker:'SCIENCE / LIVE',title:'Research lab telemetry',metrics:[['SAMPLES',String(s.samples),Math.min(100,s.samples*25)],['FORECAST MODEL',s.researchBonus?'ENHANCED':'BASELINE',s.researchBonus?100:35]],note:'Sample analysis costs 2 kWh and 1h. It improves forecast confidence, not survival by itself.'},
+    engineering:{icon:'ϟ',kicker:'ENERGY CONTROL / LIVE',title:'Power grid telemetry',metrics:[['SOLAR OUTPUT',`${solarNow.toFixed(1)} kWh/h`,s.panelsActive?solarNow/2*100:0],['DAILY BALANCE',`${(dailySolar-dailyLoad).toFixed(1)} kWh`,Math.max(0,Math.min(100,(dailySolar-dailyLoad+10)/20*100))]],note:`Battery ${s.power.toFixed(1)}/48 kWh · ${s.storm.passed?'all planned fronts passed':s.storm.active?`front live, ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}h left`:`next front in ${Math.ceil(s.storm.eta)}h (${s.storm.duration}h expected)`}. Engineering crew saves 0.06 kWh/h. Shield standby 0.03 kWh/h; active draw 0.32 kWh/h.`},
+    'life-support':{icon:'◌',kicker:'LIFE SUPPORT / LIVE',title:'Crew survival systems',metrics:[['OXYGEN',`${s.oxygen.toFixed(1)} units`,s.oxygen/12*100],['WATER',`${s.water.toFixed(1)} units`,s.water/40*100]],note:`O₂ generator ${s.oxygenGenerator?(s.oxygen>=11.95?'STANDBY · TANK FULL':'ONLINE'):'OFFLINE'} · Recycler ${s.recyclerOn?'ONLINE':'OFFLINE'} · Water collection crew ${activeCrew('water')?'ACTIVE':'UNASSIGNED/PAUSED'}. Water collection adds 0.08 units/h per specialist when conditions are safe.`},
+    greenhouse:{icon:'✿',kicker:'BIOREGENERATION / LIVE',title:'Crop growth chamber',metrics:[['GROWTH',s.cropReady?'READY TO HARVEST':`${Math.round(s.cropProgress*100)}%`,s.cropProgress*100],['FOOD RESERVE',`${s.food.toFixed(1)} rations`,s.food/40*100]],note:`A full crop cycle takes ${activeCrew('greenhouse')?48:72}h with current crew tasking and returns +8 rations. Harvesting pauses grow-light and irrigation draw until the next cycle starts.`},
+    crew:{icon:'♧',kicker:'CREW TELEMETRY / LIVE',title:'Crew status',metrics:[['LOWEST HEALTH',`${Math.min(...s.crewHealth).toFixed(0)}%`,Math.min(...s.crewHealth)],['FATIGUE',`${s.crewFatigue.toFixed(0)}%`,s.crewFatigue]],note:s.radiation.active?(s.radiationShelter?'Crew sheltered during the solar particle event.':'RADIATION EVENT ACTIVE — shelter the crew now.'):`Radiation event ${s.radiation.passed?'passed':`in ${Math.ceil(s.radiation.eta)}h`} · ${s.radiationShelter?'Shelter secured':'Shelter not secured'}. Crew Quarters assignment halves fatigue growth.`},
+    rover:{icon:'⌖',kicker:'SURFACE OPERATIONS / LIVE',title:'Rover mission telemetry',metrics:[['ROVER STATUS',s.roverOut?'OUT ON SURVEY':'DOCKED',s.roverOut?65:100],['ENERGY COST',(activeCrew('rover')?'5 kWh / survey':'6 kWh / survey'),Math.min(100,s.power/(activeCrew('rover')?5:6)*100)]],note:s.radiation.active||s.radiationShelter||(!s.radiation.passed&&s.radiation.eta<=2)?'Solar-radiation safety window: keep crew sheltered and postpone surface operations.':s.storm.active||(!s.storm.passed&&s.storm.eta<8)?'Dust-front conditions are unsafe. Keep the rover docked.':activeCrew('rover')?'Rover specialist shortens surveys and reduces their energy cost.':'A survey returns +2 materials and +1 sample after 3h.'},
+    research:{icon:'◇',kicker:'SCIENCE / LIVE',title:'Research lab telemetry',metrics:[['SAMPLES',String(s.samples),Math.min(100,s.samples*25)],['FORECAST MODEL',s.researchBonus?'ENHANCED':'BASELINE',s.researchBonus?100:35]],note:`Sample analysis costs ${activeCrew('research')?1.5:2} kWh and 1h. An enhanced model adds an early T−36h dust-front warning when available.`},
     weather:{icon:'⚠',kicker:'SPACE WEATHER / LIVE',title:'Dust fronts + solar radiation',metrics:[['DUST FRONT',s.storm.active?`LIVE · ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}H LEFT`:s.storm.passed?'ALL PASSED':`T−${Math.ceil(s.storm.eta)}h · ${s.storm.duration}h`,s.storm.active?100:s.storm.passed?0:Math.max(0,100-s.storm.eta/42*100)],['SOLAR PARTICLES',s.radiation.active?`LIVE · ${Math.max(0,Math.ceil(s.radiation.duration-s.radiation.elapsed))}H LEFT`:s.radiation.passed?'PASSED':`T−${Math.ceil(s.radiation.eta)}h · ${s.radiation.duration}h`,s.radiation.active?100:s.radiation.passed?0:Math.max(0,100-s.radiation.eta/64*100)]],note:`Dust front: ${s.storm.active?`LIVE, ${Math.max(0,Math.ceil(s.storm.duration-s.storm.elapsed))}h remaining`:s.storm.passed?'PASSED':`impact in ${Math.ceil(s.storm.eta)}h`}. Solar-particle radiation: ${s.radiation.active?`LIVE, ${Math.max(0,Math.ceil(s.radiation.duration-s.radiation.elapsed))}h remaining`:s.radiation.passed?'PASSED':`in ${Math.ceil(s.radiation.eta)}h`}. These are separate hazards.`},
-    objectives:{icon:'☑',kicker:'MISSION CONTROL / LIVE',title:'Mission readiness',metrics:[['MISSION ELAPSED',`${Math.floor(s.hours/24)}d ${Math.floor(s.hours%24)}h`,s.hours/(s.missionDays*24)*100],['CRITICAL TASKS',String(s.priorities.filter(p=>p.level==='critical').length),s.priorities.filter(p=>p.level==='critical').length?20:100]],note:s.priorities[0]?`Next priority: ${s.priorities[0].title}. Select it from the task list.`:'No immediate critical task. Continue monitoring reserves.'}
+    objectives:{icon:'☑',kicker:'MISSION CONTROL / LIVE',title:'Mission readiness',metrics:[['MISSION ELAPSED',`${Math.floor((s.missionElapsed??Math.max(0,s.hours-6))/24)}d ${Math.floor((s.missionElapsed??Math.max(0,s.hours-6))%24)}h`,(s.missionElapsed??Math.max(0,s.hours-6))/(s.missionDays*24)*100],['CRITICAL TASKS',String(s.priorities.filter(p=>p.level==='critical').length),s.priorities.filter(p=>p.level==='critical').length?20:100]],note:s.priorities[0]?`Next priority: ${s.priorities[0].title}. Select it from the task list.`:'No immediate critical task. Continue monitoring reserves.'}
   };
   const v=views[currentRoom]||views.engineering;put('activity-hud-icon',v.icon);put('activity-hud-kicker',v.kicker);put('activity-hud-title',v.title);put('activity-hud-note',v.note);
   const metrics=document.getElementById('activity-hud-metrics');metrics.replaceChildren();
@@ -306,7 +322,7 @@ function updateActivityHUD(s=game.getState()){
   const powerCard=document.getElementById('power-plan-card');
   if(currentRoom==='engineering'){
     powerCard.classList.remove('hidden');const stormTarget=estimateStormReserve(s);const ok=s.power>=stormTarget,reserveColor=ok?'#8de0b7':'#ff8d8d';
-    const planAdvice=s.storm.active?'STORM LIVE: keep the shield on. Pause the greenhouse and rover if needed; never lower the shield during impact.':s.storm.passed?(s.power>=stormTarget?'All fronts passed. Clean/repair the array and keep a safe life-support reserve.':`All fronts passed, but reserve is below ${stormTarget} kWh for essential loads. Recharge and pause optional systems.`):s.power>=stormTarget?`Reserve meets the ${stormTarget} kWh estimate for this ${s.storm.duration}h front. Keep the array online; arm the shield at T−1h.`:`Aim for ${stormTarget} kWh at impact based on the ${s.storm.duration}h forecast. Inspect the shield early, keep it off until T−1h, pause optional loads, and keep solar generation online.`;
+    const planAdvice=s.storm.active?(s.shieldActive?'STORM LIVE: keep the shield on. Pause the greenhouse and rover if needed.':'STORM LIVE WITHOUT SHIELD: the array is taking recoverable damage. Keep life support powered, shed optional loads, and plan to clean/repair the array afterward.'):s.storm.passed?(s.power>=stormTarget?'All fronts passed. Clean/repair the array and keep a safe life-support reserve.':`All fronts passed, but reserve is below ${stormTarget} kWh for essential loads. Recharge and pause optional systems.`):s.power>=stormTarget?`Reserve meets the ${stormTarget} kWh estimate for this ${s.storm.duration}h front. Keep the array online; arm the shield at T−1h.`:`Aim for ${stormTarget} kWh at impact based on the ${s.storm.duration}h forecast. Inspect the shield early, keep it off until T−1h, pause optional loads, and keep solar generation online.`;
     powerCard.innerHTML=`<div class="power-plan-head"><span>POWER PLAN · LIVE</span><b style="color:${reserveColor}">${ok?'RESERVE OK':'RESERVE LOW'}</b></div><div class="power-plan-stats"><div class="power-plan-stat"><small>STORED / CAPACITY</small><b>${s.power.toFixed(1)} / 48 kWh</b></div><div class="power-plan-stat"><small>DAILY IN / OUT</small><b>${dailySolar.toFixed(0)} / ${dailyLoad.toFixed(0)} kWh</b></div></div><div class="power-plan-meter"><i style="width:${Math.min(100,s.power/48*100)}%;background:${reserveColor}"></i></div><div class="power-plan-tip">Battery auto-stores solar energy (cap 48 kWh). Clear-day max <strong>24 kWh</strong> · forecast reserve target <strong>${stormTarget} kWh</strong>. ${planAdvice}</div>`;
   }else powerCard.classList.add('hidden');
 }
@@ -381,7 +397,7 @@ function showModal(type){
     kicker.textContent='MISSION CONTROL';title.textContent='Mission objectives';
     const goals=[['Deploy and activate the solar array',s.panelsActive],['Start oxygen generation',s.oxygenGenerator],['Start water recycling',s.recyclerOn],['Inspect the storm shield',s.shieldInspected],['Keep crew health above zero',Math.min(...s.crewHealth)>0],['Survive the mission duration',s.won]];
     addHtml(`<div class="objectives-modal">${goals.map(([label,done])=>`<div class="objective-line"><span class="${done?'done':''}">${done?'✓':'○'}</span><b>${label}</b><small>${done?'COMPLETE':'PENDING'}</small></div>`).join('')}</div>
-      <div class="objective-progress"><div><span>MISSION PROGRESS</span><b>${Math.min(100,Math.round(s.hours/(s.missionDays*24)*100))}%</b></div><div class="wide-meter"><i style="width:${Math.min(100,s.hours/(s.missionDays*24)*100)}%"></i></div></div>`);
+      <div class="objective-progress"><div><span>MISSION PROGRESS</span><b>${Math.min(100,Math.round((s.missionElapsed??Math.max(0,s.hours-6))/(s.missionDays*24)*100))}%</b></div><div class="wide-meter"><i style="width:${Math.min(100,(s.missionElapsed??Math.max(0,s.hours-6))/(s.missionDays*24)*100)}%"></i></div></div>`);
     addFooter('Open objective controls',()=>{close();selectRoom('objectives');});
   }else if(type==='settings'){
     kicker.textContent='SIMULATION SETTINGS';title.textContent='Mission settings';
@@ -398,13 +414,13 @@ function showModal(type){
   }else if(type==='end-confirm'){
     kicker.textContent='COMMAND AUTHORIZATION';title.textContent='End this mission?';
     addHtml(`<div class="end-confirm-card"><span class="end-confirm-icon">⏻</span><b>Return to the main menu</b><p>This will stop the current session and open the mission debrief. Any unsaved progress in this session will be lost when you leave. ${sessionMode==='guest'?'Guest sessions are never saved.':'Save first if you want to keep this mission on this browser.'}</p></div>
-      <div class="modal-stat-grid">${stat('Elapsed time',`${s.hours.toFixed(0)} h`)}${stat('Destination',(s.destination||'moon').toUpperCase())}${stat('Battery',`${s.power.toFixed(1)} kWh`)}${stat('Crew status',`${Math.min(...s.crewHealth).toFixed(0)}% minimum health`)}</div>`);
+      <div class="modal-stat-grid">${stat('Elapsed time',`${(s.missionElapsed??Math.max(0,s.hours-6)).toFixed(0)} h`)}${stat('Destination',(s.destination||'moon').toUpperCase())}${stat('Battery',`${s.power.toFixed(1)} kWh`)}${stat('Crew status',`${Math.min(...s.crewHealth).toFixed(0)}% minimum health`)}</div>`);
     addFooter('Keep playing',close,false);addFooter('End mission & debrief',()=>{close();if(!s.ended)game.endEarly();showModal('debrief');},true);
   }else if(type==='debrief'){
     const commanderEnded=s.endReason==='commander';
     kicker.textContent='MISSION DEBRIEF';title.textContent=s.won?'Mission accomplished':commanderEnded?'Mission ended early':'Mission failed';
     addHtml(`<div class="debrief-hero ${s.won?'success':commanderEnded?'neutral':'failure'}"><span>${s.won?'✦':commanderEnded?'Ⅱ':'⚠'}</span><b>${s.won?'Crew survived the mission':commanderEnded?'Mission ended by commander':'Survival conditions lost'}</b><small>${s.won?'You reached the selected mission duration.':commanderEnded?'This was a voluntary early exit. Review crew health and resources before returning to the menu.':'Use the mission log to trace the critical failure.'}</small></div>
-      <div class="modal-stat-grid">${stat('Destination',(s.destination||'moon').toUpperCase())}${stat('Elapsed time',`${s.hours.toFixed(0)} h`)}${stat('Battery',`${s.power.toFixed(1)} kWh`)}${stat('Lowest crew health',`${Math.min(...s.crewHealth).toFixed(0)}%`)}${stat('Research samples',String(s.samples))}</div>`);
+      <div class="modal-stat-grid">${stat('Destination',(s.destination||'moon').toUpperCase())}${stat('Elapsed time',`${(s.missionElapsed??Math.max(0,s.hours-6)).toFixed(0)} h`)}${stat('Battery',`${s.power.toFixed(1)} kWh`)}${stat('Lowest crew health',`${Math.min(...s.crewHealth).toFixed(0)}%`)}${stat('Research samples',String(s.samples))}</div>`);
     addFooter('Return to main menu',goHome,false);addFooter('Restart mission',()=>{game.reset(s.missionDays,s.destination);close();selectRoom('engineering');},true);addFooter('Review mission log',()=>showModal('log'),false);
   }else if(type==='scene'){
     kicker.textContent='ENVIRONMENT INSPECTION';title.textContent='Outpost telemetry';

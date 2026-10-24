@@ -223,7 +223,7 @@ export function createLunarScene(canvas) {
   const crewJobPositions = {
     idle: [new THREE.Vector3(-1.2,0,3.2),new THREE.Vector3(-.4,0,3.45),new THREE.Vector3(.45,0,3.4),new THREE.Vector3(1.2,0,3.2)],
     engineering: new THREE.Vector3(-4.5,0,-1.15),
-    water: new THREE.Vector3(-1.15,0,1.15),
+    water: new THREE.Vector3(-5.25,0,3.15),
     'life-support': new THREE.Vector3(-1.15,0,1.15),
     greenhouse: new THREE.Vector3(3.65,0,.45),
     crew: new THREE.Vector3(.1,0,2.25),
@@ -281,7 +281,7 @@ export function createLunarScene(canvas) {
     radiationGlow.intensity = state.radiation?.active ? 1.5 : 0;
     roverTarget.set(state.roverOut ? 8.1 : 2.7, 0, state.roverOut ? -2.7 : 2.2); headlamp.intensity = state.roverOut ? 1.8 : 0;
     crewActors.forEach((actor, i) => {
-      const sheltered = state.radiationShelter;
+      const sheltered = state.radiationShelter || state.storm.active || (!state.storm.passed && state.storm.eta <= 8);
       const job = state.crewAssignments?.[i] || ['engineering','water','greenhouse','research'][i];
       const paused = Boolean(state.crewPaused?.[i]);
       if (sheltered) actor.target.copy(crewShelterPositions[i]);
