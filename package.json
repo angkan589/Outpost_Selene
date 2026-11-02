@@ -1,7 +1,7 @@
 {
   "name": "outpost-selene",
   "private": true,
-  "version": "2.1.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "test": "node --test",
@@ -15,5 +15,6 @@
   },
   "devDependencies": {
     "vite": "^7.1.7"
-  }
+  },
+  "description": "Educational lunar and Martian outpost mission trainer"
 }

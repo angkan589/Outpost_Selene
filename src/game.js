@@ -1,4 +1,29 @@
 const MAX_POWER = 48;
+export const DIFFICULTY_PROFILES = {
+  cadet: { label: 'CADET', ageBand: '8–12', power: 38, oxygen: 12, water: 34, food: 36, materials: 9, cropYield: 8, consumption: 0.82, hazardDamage: 0.65, radiationDamage: 0.55, warningHours: 36, stormMin: 2, stormMax: 4 },
+  specialist: { label: 'SPECIALIST', ageBand: '13–15', power: 28, oxygen: 10, water: 24, food: 28, materials: 5, cropYield: 8, consumption: 1, hazardDamage: 1, radiationDamage: 1, warningHours: 24, stormMin: 3, stormMax: 6 },
+  commander: { label: 'COMMANDER', ageBand: '16–18+', power: 24, oxygen: 9, water: 20, food: 22, materials: 4, cropYield: 9, consumption: 1.06, hazardDamage: 1.35, radiationDamage: 1.35, warningHours: 12, stormMin: 4, stormMax: 7 }
+};
+export function getSolarRating(destination = 'moon') { return destination === 'mars' ? 2.16 : 2.0; }
+export function getMissionDayHours(destination = 'moon') { return destination === 'mars' ? 24.66 : 24; }
+export function getSolarAvailability(hours, destination = 'moon') {
+  if (destination === 'mars') {
+    const localHour = ((hours % 24.66) + 24.66) % 24.66;
+    return localHour >= 6.16 && localHour < 18.5 ? 1.0 : 0;
+  }
+  // Simplified lunar south-polar ridge scenario; not a live site-specific LRO forecast.
+  const phase = ((hours % 168) + 168) % 168;
+  return phase < 132 ? 0.88 : 0.08;
+}
+function dustWarningThresholds(state) {
+  const profile = DIFFICULTY_PROFILES[state.difficulty] || DIFFICULTY_PROFILES.specialist;
+  const base = profile.warningHours === 36 ? [36, 24, 12, 6, 1] : profile.warningHours === 12 ? [12, 6, 1] : [24, 12, 6, 1];
+  return state.researchBonus && !base.includes(36) ? [36, ...base] : base;
+}
+function radiationWarningThresholds(state) {
+  const hours = DIFFICULTY_PROFILES[state.difficulty]?.warningHours || 24;
+  return hours === 36 ? [36, 24, 12, 6, 1] : hours === 12 ? [12, 6, 1] : [24, 12, 6, 1];
+}
 // Balanced shield model: low-power standby before impact, full protection during the hazard.
 const SHIELD_STANDBY_DRAW = 0.03; // kWh/hour while armed before impact
 const SHIELD_ACTIVE_DRAW = 0.32;  // kWh/hour during a short 3–6-hour dust front
@@ -17,9 +42,13 @@ function estimateStormReserve(state) {
   return Math.min(MAX_POWER, Math.ceil(hourlyLoad * hours + 2));
 }
 
-function initialState(days = 7, destination = 'moon') {
+function initialState(days = 7, destination = 'moon', difficulty = 'specialist') {
   const firstStormEta = randomInt(28, 42);
-  const firstStormDuration = randomInt(3, 6);
+  const profile = DIFFICULTY_PROFILES[difficulty] || DIFFICULTY_PROFILES.specialist;
+  const moonMin = Math.max(1, profile.stormMin - 1), moonMax = Math.max(2, profile.stormMax - 2);
+  const stormMin = destination === 'moon' ? moonMin : profile.stormMin;
+  const stormMax = destination === 'moon' ? moonMax : profile.stormMax;
+  const firstStormDuration = randomInt(stormMin, stormMax);
   let radiationEta = randomInt(32, 64);
   // Avoid an unavoidable overlap on the first hazard pair while allowing either event to come first.
   if (Math.abs(radiationEta - firstStormEta) < firstStormDuration + 5) {
@@ -30,8 +59,8 @@ function initialState(days = 7, destination = 'moon') {
     : days <= 30 ? randomInt(3, 4)
     : Math.min(12, Math.max(4, Math.round(days / 10) + randomInt(-1, 1)));
   return {
-    hours: 6, missionElapsed: 0, missionDays: days, destination: destination === 'mars' ? 'mars' : 'moon',
-    power: 28, oxygen: 10, water: 24, food: 28, materials: 5, samples: 0,
+    hours: 6, missionElapsed: 0, missionDays: days, destination: destination === 'mars' ? 'mars' : 'moon', difficulty: DIFFICULTY_PROFILES[difficulty] ? difficulty : 'specialist',
+    power: profile.power, oxygen: profile.oxygen, water: profile.water, food: profile.food, materials: profile.materials, samples: 0,
     crewAssignments: ['engineering', 'water', 'greenhouse', 'research'], crewPaused: [false, false, false, false], endReason: null,
     panelsDeployed: false, panelsActive: false, panelHealth: 100, panelDust: 0,
     oxygenGenerator: false, recyclerOn: false, greenhouseOn: false, cropProgress: 0, cropReady: false,
@@ -39,11 +68,11 @@ function initialState(days = 7, destination = 'moon') {
     rationing: false, rationHours: 0, roverOut: false, roverReady: true, roverMission: 0, roverSamplePending: false,
     crewHealth: [100, 100, 100, 100], crewFatigue: 12,
     storm: { eta: firstStormEta, active: false, elapsed: 0, duration: firstStormDuration,
-      solarFactor: randomFloat(0.22, 0.38), passed: false, eventsCompleted: 0,
+      solarFactor: destination === 'moon' ? randomFloat(0.72, 0.90) : randomFloat(0.22, 0.38), passed: false, eventsCompleted: 0,
       eventsPlanned: dustFrontsPlanned, impactLogged: false },
     // Separate from the fictional dust-front gameplay hazard: randomized solar energetic particles.
     radiation: { eta: radiationEta, active: false, elapsed: 0, duration: randomInt(2, 4),
-      passed: false, exposure: 0, damagePerHour: randomFloat(1.4, 2.0) },
+      passed: false, exposure: 0, damagePerHour: randomFloat(1.4, 2.0), surfaceReferenceMicroGyPerDay: destination === 'mars' ? 210 : null, cumulativeSurfaceReferenceMicroGy: 0 },
     radiationShelter: false,
     researchBonus: false, ended: false, won: false, log: [], warningsSeen: [], priorities: [], lastEvent: null
   };
@@ -54,8 +83,10 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
   let lastSupplyAlert = -99, lastPowerAlert = -99, lastThresholdAlert = -99;
 
   function timestamp() {
-    const sol = Math.floor(state.hours / 24) + 1;
-    return `SOL ${String(sol).padStart(2, '0')} · ${String(Math.floor(state.hours % 24)).padStart(2, '0')}:00`;
+    const dayHours = getMissionDayHours(state.destination);
+    const day = Math.floor(state.hours / dayHours) + 1;
+    const label = state.destination === 'mars' ? 'SOL' : 'DAY';
+    return `${label} ${String(day).padStart(2, '0')} · ${String(Math.floor(state.hours % dayHours)).padStart(2, '0')}:00`;
   }
   function log(message, kind = 'normal') {
     state.log.push({ time: timestamp(), message, kind });
@@ -70,6 +101,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
 
   function computePriorities() {
     const p = [];
+    const hazardLabel = state.destination === 'mars' ? 'MARTIAN DUST FRONT' : 'LUNAR DUST EVENT';
     const add = (level, title, detail, room, score = 50) => p.push({ level, title, detail, room, score });
     const stormEta = Math.max(0, Math.ceil(state.storm.eta));
     const stormLeft = Math.max(0, Math.ceil((state.storm.duration || 4) - (state.storm.elapsed || 0)));
@@ -78,24 +110,25 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     const frontCount = state.storm.eventsPlanned || 1;
     const reserveTarget = estimateStormReserve(state);
     const radiationEta = Math.max(0, Math.ceil(state.radiation?.eta ?? 999));
-    const foodDays = (state.food / (state.rationing ? 3 : 4)).toFixed(1);
+    const dayUnit = state.destination === 'mars' ? 'sols' : 'days';
+    const foodDays = (state.food / ((state.rationing ? 3 : 4) * (DIFFICULTY_PROFILES[state.difficulty]?.consumption || 1))).toFixed(1);
 
     // Put immediate life-safety and active-hazard tasks at the top of the live queue.
     if (state.radiation?.active && !state.radiationShelter) {
       add('critical', 'SOLAR RADIATION LIVE — SHELTER CREW', `Radiation event is active. Secure the crew in the habitat now; about ${Math.max(0, Math.ceil(state.radiation.duration - state.radiation.elapsed))}h remain.`, 'crew', 120);
-    } else if (state.radiation && !state.radiation.passed && radiationEta <= 24 && !state.radiationShelter) {
+    } else if (state.radiation && !state.radiation.passed && radiationEta <= (DIFFICULTY_PROFILES[state.difficulty]?.warningHours || 24) && !state.radiationShelter) {
       add(radiationEta <= 6 ? 'critical' : 'warning', 'Prepare the radiation shelter', `Separate solar-particle event in ${radiationEta}h. The equipment shield does not protect the crew.`, 'crew', radiationEta <= 6 ? 112 : 78);
     }
 
     if (state.storm.active) {
-      add(state.power < 12 ? 'critical' : 'warning', `DUST FRONT ${frontNumber}/${frontCount} LIVE — ${stormLeft}H LEFT`, `Solar input is down about ${solarLoss}%. Shield ${state.shieldActive ? 'ACTIVE' : 'OFF'}; battery ${state.power.toFixed(1)} / 48 kWh. Active shield draw is 0.32 kWh/hour; estimated reserve for the remaining front is ${reserveTarget} kWh. Keep optional loads paused.`, 'engineering', state.power < 12 ? 115 : 92);
-    } else if (!state.storm.passed && state.storm.eta <= 24) {
+      add(state.power < 12 ? 'critical' : 'warning', `${hazardLabel} ${frontNumber}/${frontCount} LIVE — ${stormLeft}H LEFT`, `Solar input is down about ${solarLoss}%. Shield ${state.shieldActive ? 'ACTIVE' : 'OFF'}; battery ${state.power.toFixed(1)} / 48 kWh. Active shield draw is 0.32 kWh/hour; estimated reserve for the remaining front is ${reserveTarget} kWh. Keep optional loads paused.`, 'engineering', state.power < 12 ? 115 : 92);
+    } else if (!state.storm.passed && state.storm.eta <= (DIFFICULTY_PROFILES[state.difficulty]?.warningHours || 24)) {
       if (stormEta <= 1 && !state.shieldActive) {
-        add('critical', `DUST FRONT ${frontNumber}/${frontCount} IN 1H — ACTIVATE SHIELD NOW`, `Final warning. Activate the inspected shield now so it is armed at impact. This front is forecast to last ${state.storm.duration}h; active protection draws 0.32 kWh/hour.`, 'engineering', 112);
+        add('critical', `${hazardLabel} ${frontNumber}/${frontCount} IN 1H — ACTIVATE SHIELD NOW`, `Final warning. Activate the inspected shield now so it is armed at impact. This front is forecast to last ${state.storm.duration}h; active protection draws 0.32 kWh/hour.`, 'engineering', 112);
       } else if (state.shieldActive) {
-        add('warning', `DUST FRONT ${frontNumber}/${frontCount} IN ${stormEta}H — SHIELD ARMED`, `The shield is in low-power standby before impact (0.03 kWh/hour), then draws 0.32 kWh/hour during this ${state.storm.duration}h front. Keep the array active and preserve enough power for essential systems.`, 'engineering', 78);
+        add('warning', `${hazardLabel} ${frontNumber}/${frontCount} IN ${stormEta}H — SHIELD ARMED`, `The shield is in low-power standby before impact (0.03 kWh/hour), then draws 0.32 kWh/hour during this ${state.storm.duration}h front. Keep the array active and preserve enough power for essential systems.`, 'engineering', 78);
       } else {
-        add('warning', `DUST FRONT ${frontNumber}/${frontCount} IN ${stormEta}H — INSPECT, SAVE POWER`, `Inspect the shield now, but leave it OFF until the T−1h warning. This front is forecast to last ${state.storm.duration}h. Keep solar generation online and pause optional loads if the reserve is low.`, 'engineering', stormEta <= 6 ? 94 : 82);
+        add('warning', `${hazardLabel} ${frontNumber}/${frontCount} IN ${stormEta}H — INSPECT, SAVE POWER`, `Inspect the shield now, but leave it OFF until the T−1h warning. This front is forecast to last ${state.storm.duration}h. Keep solar generation online and pause optional loads if the reserve is low.`, 'engineering', stormEta <= 6 ? 94 : 82);
       }
     }
 
@@ -106,23 +139,23 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
 
     if (state.oxygen <= 0) add('critical', 'OXYGEN DEPLETED — RESTORE SUPPLY', 'Crew health is falling. Start oxygen generation or use an emergency oxygen kit.', 'life-support', 119);
     else if (state.oxygen < 4) add('critical', 'OXYGEN CRITICAL', `${state.oxygen.toFixed(1)} units remain. Start generation immediately.`, 'life-support', 116);
-    else if (!state.oxygenGenerator) add(state.oxygen < 6 ? 'critical' : 'warning', 'Start oxygen generator', `${state.oxygen.toFixed(1)} units remain. Stored oxygen is falling by about 4 units/day without generation.`, 'life-support', state.oxygen < 6 ? 105 : 64);
+    else if (!state.oxygenGenerator) add(state.oxygen < 6 ? 'critical' : 'warning', 'Start oxygen generator', `${state.oxygen.toFixed(1)} units remain. Stored oxygen is falling by about 4 units per ${state.destination === 'mars' ? 'sol' : 'day'} without generation.`, 'life-support', state.oxygen < 6 ? 105 : 64);
     else if (state.oxygen < 6) add('warning', 'Oxygen reserve low', `${state.oxygen.toFixed(1)} units remain. Confirm the generator is running.`, 'life-support', 84);
 
     if (state.water <= 0) add('critical', 'WATER DEPLETED — RESTORE RECYCLING', 'Crew health is falling. Restart water recovery and reduce optional water use.', 'life-support', 119);
     else if (state.water < 6) add('critical', 'WATER CRITICAL', `${state.water.toFixed(1)} units remain. Keep the recycler running and pause nonessential water use.`, 'life-support', 109);
-    else if (!state.recyclerOn) add(state.water < 12 ? 'critical' : 'warning', 'Start water recycler', `${state.water.toFixed(1)} units remain. Without recycling, the crew uses about 4 units/day.`, 'life-support', state.water < 12 ? 104 : 62);
+    else if (!state.recyclerOn) add(state.water < 12 ? 'critical' : 'warning', 'Start water recycler', `${state.water.toFixed(1)} units remain. Without recycling, the crew uses about 4 units per ${state.destination === 'mars' ? 'sol' : 'day'}.`, 'life-support', state.water < 12 ? 104 : 62);
     else if (state.water < 12) add('warning', 'Water reserve low', `${state.water.toFixed(1)} units remain. Recycling is online; keep it powered.`, 'life-support', 82);
-    if (state.water < 18 && activeCrewCount('water') === 0) add('warning', 'Assign water collection crew', 'No active water specialist is collecting ice. Assign a crew member to Water collection; each active specialist adds 0.08 water units/hour for 0.08 kWh/hour while conditions are safe.', 'crew', 73);
+    if (state.water < 18 && activeCrewCount('water') === 0) add('warning', 'Assign water collection crew', 'No active water specialist is collecting ice. Assign a crew member to Water collection; each active specialist adds 0.10 water units/hour for 0.08 kWh/hour while conditions are safe.', 'crew', 73);
 
     const cropCycleHours = activeCrewCount('greenhouse') > 0 ? 48 : 72;
     if (state.food <= 0) add('critical', 'FOOD DEPLETED — RATION IMMEDIATELY', 'Crew health is falling. Enable rationing and keep the greenhouse operating if possible.', 'greenhouse', 119);
-    else if (state.cropReady) add('warning', 'HARVEST GREENHOUSE CROPS', 'Mature crops are ready. Harvest now to add 8 food rations.', 'greenhouse', state.food < 18 ? 103 : 60);
-    else if (state.food < 6) add('critical', 'FOOD CRITICAL — PROTECT RATIONS', `${state.food.toFixed(1)} rations remain (~${foodDays} days at current use). ${state.greenhouseOn ? `Crop growth is ${Math.round(state.cropProgress * 100)}%.` : `Start the greenhouse now; crops take ${cropCycleHours}h to mature.`} Enable rationing if needed.`, 'greenhouse', 114);
-    else if (state.food < 12) add('warning', 'FOOD LOW — START PRODUCTION', `${state.food.toFixed(1)} rations remain (~${foodDays} days at 4/day). ${state.greenhouseOn ? `Greenhouse growth: ${Math.round(state.cropProgress * 100)}%.` : `Start the greenhouse now; crops take ${cropCycleHours}h to mature.`} Consider rationing.`, 'greenhouse', 96);
-    else if (state.food < 18 && !state.greenhouseOn) add('warning', 'FOOD PRODUCTION NEEDED — START GREENHOUSE', `${state.food.toFixed(1)} rations remain (~${foodDays} days at current use). Crops take ${cropCycleHours}h with current crew tasking, so start production before reserves become critical.`, 'greenhouse', 83);
+    else if (state.cropReady) add('warning', 'HARVEST GREENHOUSE CROPS', `Mature crops are ready. Harvest now to add ${DIFFICULTY_PROFILES[state.difficulty]?.cropYield || 8} food rations.`, 'greenhouse', state.food < 18 ? 103 : 60);
+    else if (state.food < 6) add('critical', 'FOOD CRITICAL — PROTECT RATIONS', `${state.food.toFixed(1)} rations remain (~${foodDays} ${dayUnit} at current use). ${state.greenhouseOn ? `Crop growth is ${Math.round(state.cropProgress * 100)}%.` : `Start the greenhouse now; crops take ${cropCycleHours}h to mature.`} Enable rationing if needed.`, 'greenhouse', 114);
+    else if (state.food < 12) add('warning', 'FOOD LOW — START PRODUCTION', `${state.food.toFixed(1)} rations remain (~${foodDays} ${dayUnit} at 4 per ${state.destination === 'mars' ? 'sol' : 'day'}). ${state.greenhouseOn ? `Greenhouse growth: ${Math.round(state.cropProgress * 100)}%.` : `Start the greenhouse now; crops take ${cropCycleHours}h to mature.`} Consider rationing.`, 'greenhouse', 96);
+    else if (state.food < 18 && !state.greenhouseOn) add('warning', 'FOOD PRODUCTION NEEDED — START GREENHOUSE', `${state.food.toFixed(1)} rations remain (~${foodDays} ${dayUnit} at current use). Crops take ${cropCycleHours}h with current crew tasking, so start production before reserves become critical.`, 'greenhouse', 83);
 
-    if (!state.shieldInspected && !state.storm.passed) add('warning', 'Inspect the storm shield', `Confirm the shield is operational before the next dust front (${state.storm.active ? `${stormLeft}h remaining` : `T−${stormEta}h`}).`, 'engineering', !state.storm.passed && state.storm.eta <= 24 ? 87 : 45);
+    if (!state.shieldInspected && !state.storm.passed) add('warning', 'Inspect the storm shield', `Confirm the shield is operational before the next dust front (${state.storm.active ? `${stormLeft}h remaining` : `T−${stormEta}h`}).`, 'engineering', !state.storm.passed && state.storm.eta <= (DIFFICULTY_PROFILES[state.difficulty]?.warningHours || 24) ? 87 : 45);
     if (state.panelDust >= 10) add('warning', state.storm.passed ? 'Dust fronts complete — clean solar panels' : 'Between dust fronts — clean solar panels', `${state.panelDust.toFixed(0)}% dust coverage is reducing solar collection. Cleaning costs 1 material${state.storm.passed ? '.' : ` before the next front in ${stormEta}h.`}`, 'engineering', 76);
     if (state.panelHealth < 90) add('warning', state.storm.passed ? 'Repair storm-damaged solar array' : 'Repair array between dust fronts', `Panel hardware health is ${state.panelHealth.toFixed(0)}%. Repairing costs 3 materials and restores 30% health.`, 'engineering', 74);
     if (state.roverOut && (state.storm.active || (!state.storm.passed && state.storm.eta <= 12) || state.radiation.active || (!state.radiation.passed && state.radiation.eta <= 2))) add('critical', 'Recall rover before the hazard', 'The rover is outside while dust-front or solar-radiation conditions are dangerous.', 'rover', 111);
@@ -137,6 +170,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     if (!Array.isArray(state.warningsSeen)) state.warningsSeen = [];
     const seen = key => state.warningsSeen.includes(key);
     const candidates = [];
+    const dayUnit = state.destination === 'mars' ? 'sols' : 'days';
     const add = (key, score, title, body, severity, details, actions) => {
       if (!seen(key)) candidates.push({ key, score, title, body, severity, details, actions });
     };
@@ -144,17 +178,17 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     // Food prompts adapt to the assigned greenhouse specialist's crop-cycle speed.
     const cropCycleHours = activeCrewCount('greenhouse') > 0 ? 48 : 72;
     if (state.food > 0 && state.food <= 6) {
-      add('resource-food-critical', 122, 'FOOD CRITICAL', `Only ${state.food.toFixed(1)} rations remain (~${(state.food / (state.rationing ? 3 : 4)).toFixed(1)} days at current use). Harvest if crops are ready; otherwise start production and enable rationing now.`, 'critical', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Daily use', state.rationing ? '3 rations/day (rationing)' : '4 rations/day'], ['Greenhouse', state.cropReady ? 'Crops ready to harvest' : state.greenhouseOn ? `${Math.round(state.cropProgress * 100)}% grown · ${cropCycleHours}h cycle` : `OFF — start production (${cropCycleHours}h cycle)`]], [{ label: state.cropReady ? 'Harvest crops' : 'Open greenhouse', action: state.cropReady ? 'harvest' : undefined, room: state.cropReady ? undefined : 'greenhouse' }, ...(!state.rationing ? [{ label: 'Enable rationing', action: 'ration' }] : []), { label: 'Acknowledge', close: true }]);
+      add('resource-food-critical', 122, 'FOOD CRITICAL', `Only ${state.food.toFixed(1)} rations remain (~${(state.food / ((state.rationing ? 3 : 4) * (DIFFICULTY_PROFILES[state.difficulty]?.consumption || 1))).toFixed(1)} ${dayUnit} at current use). Harvest if crops are ready; otherwise start production and enable rationing now.`, 'critical', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Daily use', `${state.rationing ? 3 : 4} rations/${state.destination === 'mars' ? 'sol' : 'day'} (before difficulty multiplier)`], ['Greenhouse', state.cropReady ? 'Crops ready to harvest' : state.greenhouseOn ? `${Math.round(state.cropProgress * 100)}% grown · ${cropCycleHours}h cycle` : `OFF — start production (${cropCycleHours}h cycle)`]], [{ label: state.cropReady ? 'Harvest crops' : 'Open greenhouse', action: state.cropReady ? 'harvest' : undefined, room: state.cropReady ? undefined : 'greenhouse' }, ...(!state.rationing ? [{ label: 'Enable rationing', action: 'ration' }] : []), { label: 'Acknowledge', close: true }]);
     } else if (state.food > 0 && state.food <= 12) {
-      add('resource-food-low', 100, 'FOOD LOW — START PRODUCTION', `Food is down to ${state.food.toFixed(1)} rations (~${(state.food / (state.rationing ? 3 : 4)).toFixed(1)} days at current use). Crops take ${cropCycleHours} hours to mature with current crew tasking, so keep the greenhouse running and ration if needed.`, 'warning', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Greenhouse', state.cropReady ? 'Ready to harvest' : state.greenhouseOn ? `${Math.round(state.cropProgress * 100)}% grown` : `OFF — start it now (${cropCycleHours}h cycle)`], ['Rationing', state.rationing ? 'ACTIVE' : 'OFF']], [{ label: state.cropReady ? 'Harvest crops' : 'Open greenhouse', action: state.cropReady ? 'harvest' : undefined, room: state.cropReady ? undefined : 'greenhouse' }, ...(!state.rationing ? [{ label: 'Enable rationing', action: 'ration' }] : []), { label: 'Acknowledge', close: true }]);
+      add('resource-food-low', 100, 'FOOD LOW — START PRODUCTION', `Food is down to ${state.food.toFixed(1)} rations (~${(state.food / ((state.rationing ? 3 : 4) * (DIFFICULTY_PROFILES[state.difficulty]?.consumption || 1))).toFixed(1)} ${dayUnit} at current use). Crops take ${cropCycleHours} hours to mature with current crew tasking, so keep the greenhouse running and ration if needed.`, 'warning', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Greenhouse', state.cropReady ? 'Ready to harvest' : state.greenhouseOn ? `${Math.round(state.cropProgress * 100)}% grown` : `OFF — start it now (${cropCycleHours}h cycle)`], ['Rationing', state.rationing ? 'ACTIVE' : 'OFF']], [{ label: state.cropReady ? 'Harvest crops' : 'Open greenhouse', action: state.cropReady ? 'harvest' : undefined, room: state.cropReady ? undefined : 'greenhouse' }, ...(!state.rationing ? [{ label: 'Enable rationing', action: 'ration' }] : []), { label: 'Acknowledge', close: true }]);
     } else if (state.food > 12 && state.food <= 18 && !state.greenhouseOn && !state.cropReady) {
-      add('resource-food-production', 82, 'FOOD PRODUCTION NEEDED', `${state.food.toFixed(1)} rations remain (~${(state.food / 4).toFixed(1)} days at current use). Start the greenhouse now; crops need ${cropCycleHours} hours to mature with current crew tasking.`, 'warning', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Crop cycle', `${cropCycleHours} hours`], ['Greenhouse', 'OFF — production has not started']], [{ label: 'Start food production', room: 'greenhouse' }, { label: 'Acknowledge', close: true }]);
+      add('resource-food-production', 82, 'FOOD PRODUCTION NEEDED', `${state.food.toFixed(1)} rations remain (~${(state.food / (4 * (DIFFICULTY_PROFILES[state.difficulty]?.consumption || 1))).toFixed(1)} ${dayUnit} at current use). Start the greenhouse now; crops need ${cropCycleHours} hours to mature with current crew tasking.`, 'warning', [['Food remaining', `${state.food.toFixed(1)} rations`], ['Crop cycle', `${cropCycleHours} hours`], ['Greenhouse', 'OFF — production has not started']], [{ label: 'Start food production', room: 'greenhouse' }, { label: 'Acknowledge', close: true }]);
     }
 
     if (state.water > 0 && state.water <= 3) {
       add('resource-water-critical', 121, 'WATER CRITICAL', `Only ${state.water.toFixed(1)} water units remain. Crew survival is at risk; restart recycling and reduce nonessential water use.`, 'critical', [['Water remaining', `${state.water.toFixed(1)} units`], ['Recycler', state.recyclerOn ? 'ONLINE' : 'OFFLINE']], [{ label: state.recyclerOn ? 'Open life support' : 'Start recycler', action: state.recyclerOn ? undefined : 'recycler-on', room: 'life-support' }, { label: 'Acknowledge', close: true }]);
     } else if (state.water > 3 && state.water <= 12) {
-      add('resource-water-low', 91, 'WATER RESERVE LOW', `Water is down to ${state.water.toFixed(1)} units. The crew uses about 4 units/day before recovery; keep the recycler online.`, state.water <= 6 ? 'critical' : 'warning', [['Water remaining', `${state.water.toFixed(1)} units`], ['Recycler', state.recyclerOn ? 'ONLINE' : 'OFF — start it now']], [{ label: state.recyclerOn ? 'Open life support' : 'Start recycler', action: state.recyclerOn ? undefined : 'recycler-on', room: 'life-support' }, { label: 'Acknowledge', close: true }]);
+      add('resource-water-low', 91, 'WATER RESERVE LOW', `Water is down to ${state.water.toFixed(1)} units. The crew uses about 4 units per ${state.destination === 'mars' ? 'sol' : 'day'} before recovery; keep the recycler online.`, state.water <= 6 ? 'critical' : 'warning', [['Water remaining', `${state.water.toFixed(1)} units`], ['Recycler', state.recyclerOn ? 'ONLINE' : 'OFF — start it now']], [{ label: state.recyclerOn ? 'Open life support' : 'Start recycler', action: state.recyclerOn ? undefined : 'recycler-on', room: 'life-support' }, { label: 'Acknowledge', close: true }]);
     }
 
     if (state.oxygen > 0 && state.oxygen <= 3) {
@@ -185,6 +219,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
   }
 
   function warnThreshold(threshold) {
+    const hazardLabel = state.destination === 'mars' ? 'MARTIAN DUST FRONT' : 'LUNAR DUST EVENT';
     if (!Array.isArray(state.warningsSeen)) state.warningsSeen = [];
     const frontIndex = state.storm.eventsCompleted || 0;
     const warningKey = `storm-${frontIndex}-${threshold}`;
@@ -193,27 +228,27 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     const shieldCost = state.storm.duration * SHIELD_ACTIVE_DRAW;
     const solarLoss = Math.round((1 - state.storm.solarFactor) * 100);
     const reserveTarget = estimateStormReserve(state);
-    if (threshold === 36 && state.researchBonus) {
-      event(`ENHANCED FORECAST · FRONT ${frontIndex + 1}/${state.storm.eventsPlanned || 1} T−36 HOURS`, `Research has extended the warning window. Dust front ${frontIndex + 1} is forecast in about 36 hours, lasting ${state.storm.duration}h with roughly ${solarLoss}% solar-input loss. Use this time to restore the battery, inspect the shield, and schedule surface work before the hazard window.`, 'warning', [
+    if (threshold === 36) {
+      event(`${state.researchBonus ? 'ENHANCED FORECAST' : 'EARLY FORECAST'} · FRONT ${frontIndex + 1}/${state.storm.eventsPlanned || 1} T−36 HOURS`, `${state.researchBonus ? 'Research analysis has extended the warning window.' : 'Cadet training provides an earlier planning warning.'} ${state.destination === 'mars' ? 'A Martian atmospheric dust front' : 'A lunar electrostatic dust event'} ${frontIndex + 1} is forecast in about 36 hours, lasting ${state.storm.duration}h with roughly ${solarLoss}% solar-input loss. Use this time to restore the battery, inspect the equipment shield, and schedule surface work before the hazard window.`, 'warning', [
         ['Arrival', 'About 36 hours'], ['Expected duration', `${state.storm.duration} hours`], ['Solar reduction', `About ${solarLoss}%`], ['Recommended reserve', `${reserveTarget} kWh`]
       ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Acknowledge', close: true }]);
     } else if (threshold === 24) {
-      event(`DUST FRONT ${frontIndex + 1}/${state.storm.eventsPlanned || 1} WARNING · T−24 HOURS`, `Prepare now, but keep the shield OFF until the T−1h warning. This front is forecast to last ${state.storm.duration}h and reduce solar input by about ${solarLoss}%. Armed standby uses 0.03 kWh/hour; active protection draws 0.32 kWh/hour. Aim for about ${reserveTarget} kWh at impact based on essential loads plus a 2 kWh buffer, and pause optional loads if needed.`, 'warning', [
+      event(`${hazardLabel} ${frontIndex + 1}/${state.storm.eventsPlanned || 1} WARNING · T−24 HOURS`, `Prepare now, but keep the shield OFF until the T−1h warning. This front is forecast to last ${state.storm.duration}h and reduce solar input by about ${solarLoss}%. Armed standby uses 0.03 kWh/hour; active protection draws 0.32 kWh/hour. Aim for about ${reserveTarget} kWh at impact based on essential loads plus a 2 kWh buffer, and pause optional loads if needed.`, 'warning', [
         ['Impact estimate', '24 hours'], ['Forecast duration', `${state.storm.duration} hours`], ['Solar reduction', `About ${solarLoss}%`], ['Panel damage risk', state.stormPrep ? 'Reduced by preparation' : 'Prepare exterior equipment'],
         ['Active shield energy', `~${shieldCost.toFixed(1)} kWh`], ['Recommended reserve', `${reserveTarget} kWh`], ['Standby draw', '0.03 kWh/hour'], ['Battery reserve', `${state.power.toFixed(1)} / 48 kWh`]
       ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Acknowledge', close: true }]);
     } else if (threshold === 12) {
-      event(`DUST FRONT ${frontIndex + 1}/${state.storm.eventsPlanned || 1} URGENT · T−12 HOURS`, `The dust front is approaching. Inspect the shield, recall the rover, and pause optional loads. Keep the shield OFF until the T−1h warning; it must be armed at impact. Estimated duration is ${state.storm.duration}h and active shield cost is about ${shieldCost.toFixed(1)} kWh.`, 'warning', [
+      event(`${hazardLabel} ${frontIndex + 1}/${state.storm.eventsPlanned || 1} URGENT · T−12 HOURS`, `The dust front is approaching. Inspect the shield, recall the rover, and pause optional loads. Keep the shield OFF until the T−1h warning; it must be armed at impact. Estimated duration is ${state.storm.duration}h and active shield cost is about ${shieldCost.toFixed(1)} kWh.`, 'warning', [
         ['Shield', state.shieldActive ? 'ARMED · STANDBY' : 'OFF · READY TO ARM'], ['Battery', `${state.power.toFixed(1)} kWh`],
         ['Solar panel health', `${state.panelHealth.toFixed(0)}%`], ['Rover', state.roverOut ? 'OUTSIDE' : 'SECURE']
       ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Continue', close: true }]);
     } else if (threshold === 6) {
-      event(`DUST FRONT ${frontIndex + 1}/${state.storm.eventsPlanned || 1} PREPARATION · T−6 HOURS`, `Check that the shield has been inspected, keep the solar array online, and pause optional loads. Arm the shield at the T−1h warning. This front should last ${state.storm.duration}h; estimated solar reduction is ${solarLoss}%.`, 'warning', [
+      event(`${hazardLabel} ${frontIndex + 1}/${state.storm.eventsPlanned || 1} PREPARATION · T−6 HOURS`, `Check that the shield has been inspected, keep the solar array online, and pause optional loads. Arm the shield at the T−1h warning. This front should last ${state.storm.duration}h; estimated solar reduction is ${solarLoss}%.`, 'warning', [
         ['Shield', state.shieldActive ? 'ARMED · LOW-POWER STANDBY' : 'OFF · INSPECTED BEFORE ARMING'], ['Battery', `${state.power.toFixed(1)} kWh`],
         ['Panel health', `${state.panelHealth.toFixed(0)}%`], ['Crew', `${Math.min(...state.crewHealth).toFixed(0)}% minimum health`]
       ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Continue', close: true }]);
     } else if (threshold === 1) {
-      event(`FINAL WARNING · FRONT ${frontIndex + 1}/${state.storm.eventsPlanned || 1} · T−1 HOUR`, state.shieldActive ? `Impact is one hour away and the shield is already armed. Keep the solar array online and pause optional loads. This ${state.storm.duration}h front will reduce solar input by about ${solarLoss}%.` : `IMPACT IN ONE HOUR. Activate the inspected shield now. It uses 0.03 kWh/hour in standby and 0.32 kWh/hour during this ${state.storm.duration}h front. Keep the solar array online.`, 'critical', [
+      event(`FINAL WARNING · ${hazardLabel} ${frontIndex + 1}/${state.storm.eventsPlanned || 1} · T−1 HOUR`, state.shieldActive ? `Impact is one hour away and the shield is already armed. Keep the solar array online and pause optional loads. This ${state.storm.duration}h front will reduce solar input by about ${solarLoss}%.` : `IMPACT IN ONE HOUR. Activate the inspected shield now. It uses 0.03 kWh/hour in standby and 0.32 kWh/hour during this ${state.storm.duration}h front. Keep the solar array online.`, 'critical', [
         ['Shield', state.shieldActive ? 'ARMED · READY' : 'OFF — ACTIVATE NOW'], ['Battery', `${state.power.toFixed(1)} kWh`], ['Front duration', `${state.storm.duration} hours`], ['Solar reduction', `About ${solarLoss}%`], ['Active shield budget', `~${shieldCost.toFixed(1)} kWh`]
       ], state.shieldActive ? [{ label: 'Open engineering', room: 'engineering' }, { label: 'Continue', close: true }] : [{ label: 'Activate shield now', action: 'activate-shield' }, { label: 'Open engineering', room: 'engineering' }]);
     }
@@ -221,9 +256,9 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
 
   function warnRadiation(threshold) {
     const eta = Math.max(0, Math.ceil(state.radiation.eta));
-    if (threshold === 24) {
-      event('RADIATION WATCH · T−24 HOURS', 'A separate solar particle event is forecast. This is not the dust front. Move crew into the shielded habitat before the event begins.', 'warning', [
-        ['Hazard type', 'Solar energetic particles'], ['Arrival', '24 hours'], ['Expected duration', `${state.radiation.duration} hours`], ['Exposure rate', `${state.radiation.damagePerHour.toFixed(1)} health/hour if exposed`], ['Crew shelter', state.radiationShelter ? 'READY' : 'NOT SECURED']
+    if (threshold === 36 || threshold === 24) {
+      event(`RADIATION WATCH · T−${threshold} HOURS`, `A separate solar particle event is forecast. This is separate from the selected planet's surface-dust hazard. Move crew into the shielded habitat before the event begins.`, 'warning', [
+        ['Hazard type', 'Solar energetic particles'], ['Arrival', `${threshold} hours`], ['Expected duration', `${state.radiation.duration} hours`], ['Exposure rate', `${state.radiation.damagePerHour.toFixed(1)} health/hour if exposed`], ['Crew shelter', state.radiationShelter ? 'READY' : 'NOT SECURED']
       ], [{ label: 'Open crew quarters', room: 'crew' }, { label: 'Open weather', room: 'weather' }]);
     } else if (threshold === 12 || threshold === 6 || threshold === 1) {
       event(threshold === 1 ? 'RADIATION ALERT · T−1 HOUR' : `RADIATION ${threshold === 6 ? 'CRITICAL' : 'URGENT'} · T−${threshold} HOURS`, 'Solar particle levels are rising. Shelter the crew now. The outpost dust shield and radiation shelter are different systems in this simulation.', 'critical', [
@@ -234,26 +269,31 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
 
   function tick(dt) {
     if (state.ended) return;
+    const hazardLabel = state.destination === 'mars' ? 'MARTIAN DUST FRONT' : 'LUNAR DUST EVENT';
     const oldEta = state.storm.eta;
     const oldRadiationEta = state.radiation?.eta ?? 999;
-    const hourOfDay = state.hours % 24;
-    const daylight = hourOfDay >= 6 && hourOfDay < 18;
+    const profile = DIFFICULTY_PROFILES[state.difficulty] || DIFFICULTY_PROFILES.specialist;
+    if (state.destination === 'mars' && state.radiation) {
+      state.radiation.surfaceReferenceMicroGyPerDay = 210;
+      state.radiation.cumulativeSurfaceReferenceMicroGy = (state.radiation.cumulativeSurfaceReferenceMicroGy || 0) + (210 / 24) * dt;
+    }
+    const illumination = getSolarAvailability(state.hours, state.destination);
     let generation = 0;
-    if (state.panelsActive && daylight) {
+    if (state.panelsActive && illumination > 0) {
       const weatherFactor = state.storm.active ? state.storm.solarFactor : 1;
-      generation = 2 * (state.panelHealth / 100) * (1 - state.panelDust / 100) * weatherFactor;
+      generation = getSolarRating(state.destination) * illumination * (state.panelHealth / 100) * (1 - state.panelDust / 100) * weatherFactor;
     }
     const engineerActive = activeCrewCount('engineering') > 0;
     const waterCrewCount = Math.min(2, activeCrewCount('water'));
     const waterCollectionSafe = waterCrewCount > 0 && state.power > 0 && !state.storm.active && (state.storm.passed || state.storm.eta > 8) && !state.radiation.active && (state.radiation.passed || state.radiation.eta > 2) && !state.radiationShelter;
-    const waterCollectionRate = waterCollectionSafe ? 0.08 * waterCrewCount : 0;
+    const waterCollectionRate = waterCollectionSafe ? 0.10 * waterCrewCount : 0;
     const waterCollectionLoad = waterCollectionSafe ? 0.08 * waterCrewCount : 0;
     const shieldDraw = state.shieldActive ? (state.storm.active ? SHIELD_ACTIVE_DRAW : state.storm.passed ? 0 : SHIELD_STANDBY_DRAW) : 0;
     const baseLoad = Math.max(0.35, 0.52 - (engineerActive ? 0.06 : 0));
     const oxygenGenerationActive = state.oxygenGenerator && state.oxygen < 12;
     const greenhouseGrowing = state.greenhouseOn && !state.cropReady;
-    const load = baseLoad + (oxygenGenerationActive ? 0.12 : 0) + (state.recyclerOn ? 0.11 : 0)
-      + (greenhouseGrowing ? 0.18 : 0) + shieldDraw + (state.roverOut ? 0.12 : 0) + waterCollectionLoad;
+    const load = (baseLoad + (oxygenGenerationActive ? 0.12 : 0) + (state.recyclerOn ? 0.11 : 0)
+      + (greenhouseGrowing ? 0.18 : 0) + shieldDraw + (state.roverOut ? 0.12 : 0) + waterCollectionLoad) * profile.consumption;
     state.power = clamp(state.power + (generation - load) * dt, 0, MAX_POWER);
     if (state.power <= 0.01 && state.shieldActive && state.storm.active) {
       state.shieldActive = false;
@@ -264,13 +304,14 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
         ['Battery', '0 kWh'], ['Shield', 'OFFLINE'], ['Panel health', `${state.panelHealth.toFixed(0)}%`], ['Dust coverage', `${state.panelDust.toFixed(0)}%`]
       ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Acknowledge', close: true }]);
     }
-    state.oxygen = clamp(state.oxygen + (oxygenGenerationActive ? 0.30 : 0) * dt - (4 / 24) * dt, 0, 12);
-    const waterUse = (4 / 24) * dt, waterRecovery = state.recyclerOn ? 0.115 * dt : 0, greenhouseWater = greenhouseGrowing ? 0.035 * dt : 0;
+    const missionDayHours = getMissionDayHours(state.destination);
+    state.oxygen = clamp(state.oxygen + (oxygenGenerationActive ? 0.30 : 0) * dt - (4 / missionDayHours) * profile.consumption * dt, 0, 12);
+    const waterUse = (4 / missionDayHours) * profile.consumption * dt, waterRecovery = state.recyclerOn ? 0.13 * dt : 0, greenhouseWater = greenhouseGrowing ? 0.035 * dt : 0;
     state.water = clamp(state.water - waterUse + waterRecovery + waterCollectionRate * dt - greenhouseWater, 0, 40);
-    state.food = clamp(state.food - (4 / 24) * (state.rationing ? 0.75 : 1) * dt, 0, 40);
+    state.food = clamp(state.food - (4 / missionDayHours) * profile.consumption * (state.rationing ? 0.75 : 1) * dt, 0, 40);
     if (state.rationHours > 0) { state.rationHours = Math.max(0, state.rationHours - dt); if (state.rationHours === 0) state.rationing = false; }
     if (greenhouseGrowing && state.power > 0 && state.water > 0) {
-      const cropCycleHours = activeCrewCount('greenhouse') > 0 ? 48 : 72;
+      const cropCycleHours = (activeCrewCount('greenhouse') > 0 ? 48 : 72) * (state.difficulty === 'commander' ? 1.15 : state.difficulty === 'cadet' ? 0.9 : 1);
       state.cropProgress = Math.min(1, state.cropProgress + dt / cropCycleHours);
       if (state.cropProgress >= 1) {
         state.cropReady = true;
@@ -285,10 +326,10 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
       // An unshielded front is costly but recoverable; mission failure is reserved for crew survival loss.
       state.storm.elapsed += dt;
       state.panelDust = clamp(state.panelDust + (state.shieldActive ? 0.08 : 0.65) * dt, 0, 100);
-      if (!state.shieldActive) state.panelHealth = clamp(state.panelHealth - 0.5 * dt, 0, 100);
+      if (!state.shieldActive) state.panelHealth = clamp(state.panelHealth - 0.5 * profile.hazardDamage * dt, 0, 100);
       if (!state.storm.impactLogged) {
         state.storm.impactLogged = true;
-        const damage = state.shieldActive ? 7 : state.stormPrep ? 20 : 45;
+        const damage = (state.shieldActive ? 7 : state.stormPrep ? 20 : 45) * profile.hazardDamage;
         state.panelHealth = clamp(state.panelHealth - damage, 0, 100);
         if (!state.shieldActive && !state.stormPrep) state.power = Math.max(0, state.power - 3);
         log(`Storm impact: solar array health −${damage}%${state.shieldActive ? ' (shield reduced damage)' : state.stormPrep ? ' (crew preparation reduced damage)' : ' (array exposed)'}.`, 'danger');
@@ -303,46 +344,46 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
           let interval = state.missionDays <= 7 ? randomInt(30, 48)
             : state.missionDays <= 14 ? randomInt(42, 72)
             : state.missionDays <= 30 ? randomInt(72, 120) : randomInt(120, 360);
-          const nextDuration = randomInt(3, 6);
+          const nextDuration = randomInt(state.destination === 'moon' ? Math.max(1, profile.stormMin - 1) : profile.stormMin, state.destination === 'moon' ? Math.max(2, profile.stormMax - 2) : profile.stormMax);
           if (!state.radiation.passed && !state.radiation.active && Math.abs(interval - state.radiation.eta) < nextDuration + state.radiation.duration + 4) {
             interval = state.radiation.eta + state.radiation.duration + randomInt(6, 12);
           }
           state.storm.passed = false; state.storm.eta = interval; state.storm.elapsed = 0;
-          state.storm.duration = nextDuration; state.storm.solarFactor = randomFloat(0.22, 0.38);
+          state.storm.duration = nextDuration; state.storm.solarFactor = state.destination === 'moon' ? randomFloat(0.72, 0.90) : randomFloat(0.22, 0.38);
           state.storm.impactLogged = false; state.stormPrep = false; state.shieldInspected = false;
           log(`Dust front ${state.storm.eventsCompleted}/${totalFronts} passed after ${completedDuration}h. Next front forecast in ${interval}h (${state.storm.duration}h expected duration).`, 'warning');
-          event(`DUST FRONT ${state.storm.eventsCompleted} PASSED · NEXT FRONT IN ${interval}H`, `The current front lasted ${completedDuration}h. The sky is temporarily clearer, but another front is forecast in ${interval}h. Clean the array, repair damage, inspect the shield, and rebuild the reserve before the next warning window.`, 'warning', [
+          event(`${hazardLabel} ${state.storm.eventsCompleted} PASSED · NEXT EVENT IN ${interval}H`, `The current front lasted ${completedDuration}h. The sky is temporarily clearer, but another front is forecast in ${interval}h. Clean the array, repair damage, inspect the shield, and rebuild the reserve before the next warning window.`, 'warning', [
             ['Fronts completed', `${state.storm.eventsCompleted}/${totalFronts}`], ['Next front ETA', `${interval} hours`], ['Next front duration', `${state.storm.duration} hours`],
             ['Panel health', `${state.panelHealth.toFixed(0)}%`], ['Dust coverage', `${state.panelDust.toFixed(0)}%`], ['Battery', `${state.power.toFixed(1)} kWh`]
           ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Acknowledge', close: true }]);
         } else {
           state.storm.passed = true; state.storm.eta = -1;
           log(`All ${totalFronts} planned dust front${totalFronts === 1 ? '' : 's'} passed. Clean dust and repair damaged solar panels before relying on normal generation.`, 'warning');
-          event('DUST FRONTS COMPLETE', `The final dust front lasted ${completedDuration}h. The sky is clearing, but dust and equipment damage can keep solar output low. Inspect, clean and repair the array.`, 'warning', [
+          event(`${hazardLabel}S COMPLETE`, `The final dust front lasted ${completedDuration}h. The sky is clearing, but dust and equipment damage can keep solar output low. Inspect, clean and repair the array.`, 'warning', [
             ['Fronts completed', `${state.storm.eventsCompleted}/${totalFronts}`], ['Panel health', `${state.panelHealth.toFixed(0)}%`], ['Dust coverage', `${state.panelDust.toFixed(0)}%`], ['Battery', `${state.power.toFixed(1)} kWh`]
           ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Acknowledge', close: true }]);
         }
       }
     } else if (!state.storm.passed && state.storm.eta > 0) {
       state.storm.eta = Math.max(0, state.storm.eta - dt);
-      for (const threshold of (state.researchBonus ? [36, 24, 12, 6, 1] : [24, 12, 6, 1])) {
+      for (const threshold of dustWarningThresholds(state)) {
         if (oldEta > threshold && state.storm.eta <= threshold) { warnThreshold(threshold); break; }
       }
       if (state.storm.eta <= 0) {
         state.storm.active = true; state.storm.elapsed = 0; state.storm.impactLogged = true;
         const solarLoss = Math.round((1 - state.storm.solarFactor) * 100);
-        const damage = state.shieldActive ? 7 : state.stormPrep ? 20 : 35;
+        const damage = (state.shieldActive ? 7 : state.stormPrep ? 20 : 35) * profile.hazardDamage;
         state.panelHealth = clamp(state.panelHealth - damage, 0, 100);
         if (!state.shieldActive) {
           state.panelDust = clamp(state.panelDust + 20, 0, 100);
           state.power = Math.max(0, state.power - 3);
           log(`Unshielded dust-front impact: panel health −${damage}%, dust +20%, and battery −3 kWh. This is a serious but recoverable equipment penalty.`, 'danger');
-          event('UNSHIELDED DUST FRONT IMPACT · RECOVERY POSSIBLE', `The shield was not active at impact. The array has lost ${damage}% health, dust coverage increased, and 3 kWh were lost. The crew is not automatically lost: keep essential life support running, avoid optional loads, and repair/clean the array after the front. Solar input is reduced by about ${solarLoss}% for ${state.storm.duration} hours.`, 'critical', [
+          event(`UNSHIELDED ${hazardLabel} IMPACT · RECOVERY POSSIBLE`, `The shield was not active at impact. The array has lost ${damage}% health, dust coverage increased, and 3 kWh were lost. The crew is not automatically lost: keep essential life support running, avoid optional loads, and repair/clean the array after the front. Solar input is reduced by about ${solarLoss}% for ${state.storm.duration} hours.`, 'critical', [
             ['Shield', 'OFF AT IMPACT'], ['Panel health', `${state.panelHealth.toFixed(0)}%`], ['Dust coverage', `${state.panelDust.toFixed(0)}%`], ['Solar reduction', `${solarLoss}%`], ['Front duration', `${state.storm.duration} hours`]
           ], [{ label: 'Open engineering', room: 'engineering' }, { label: 'Continue', close: true }]);
         } else {
           log(`Shielded dust-front impact: panel health −${damage}%; solar input reduced by ${solarLoss}% for ${state.storm.duration}h.`, 'danger');
-          event(`DUST FRONT ${frontNumberLabel(state.storm)} IMPACT · SHIELD HOLDING`, `The equipment shield is active. Solar input is reduced by about ${solarLoss}% for ${state.storm.duration} hours. Keep essential systems running and conserve battery.`, 'critical', [
+          event(`${hazardLabel} ${frontNumberLabel(state.storm)} IMPACT · SHIELD HOLDING`, `The equipment shield is active. Solar input is reduced by about ${solarLoss}% for ${state.storm.duration} hours. Keep essential systems running and conserve battery.`, 'critical', [
             ['Equipment shield', 'ACTIVE — PROTECTION HOLDING'], ['Panel health', `${state.panelHealth.toFixed(0)}%`], ['Solar input', `Reduced by about ${solarLoss}%`],
             ['Estimated duration', `${state.storm.duration} hours`], ['Battery reserve', `${state.power.toFixed(1)} / 48 kWh`]
           ], [{ label: 'Monitor power', room: 'engineering' }, { label: 'Continue', close: true }]);
@@ -367,7 +408,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
         }
       } else if (state.radiation.eta > 0) {
         state.radiation.eta = Math.max(0, state.radiation.eta - dt);
-        for (const threshold of [24, 12, 6, 1]) {
+        for (const threshold of radiationWarningThresholds(state)) {
           if (oldRadiationEta > threshold && state.radiation.eta <= threshold && !state.warningsSeen.includes(`rad-${threshold}`)) {
             state.warningsSeen.push(`rad-${threshold}`); warnRadiation(threshold); break;
           }
@@ -421,7 +462,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     state.hours += dt;
     checkResourceThresholdAlerts();
     if (Math.min(...state.crewHealth) <= 0) { endMission('Crew survival lost. Review the mission log to identify the missed survival warning.'); return; }
-    if (state.missionElapsed >= state.missionDays * 24) {
+    if (state.missionElapsed >= state.missionDays * getMissionDayHours(state.destination)) {
       const depleted = [['oxygen', state.oxygen], ['water', state.water], ['food', state.food]].filter(([, value]) => value <= 0).map(([name]) => name);
       if (depleted.length) endMission(`Mission time elapsed, but ${depleted.join(', ')} ${depleted.length === 1 ? 'supply was' : 'supplies were'} depleted. Restore every essential life-support resource to meet the survival objective.`);
       else endMission('completed');
@@ -446,7 +487,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     let remaining = duration, advanced = 0;
     while (remaining > 0.0001 && !state.ended) {
       const elapsed = Number.isFinite(state.missionElapsed) ? state.missionElapsed : Math.max(0, state.hours - 6);
-      const missionRemaining = Math.max(0, state.missionDays * 24 - elapsed);
+      const missionRemaining = Math.max(0, state.missionDays * getMissionDayHours(state.destination) - elapsed);
       if (missionRemaining <= 0.0001) {
         const depleted = [['oxygen', state.oxygen], ['water', state.water], ['food', state.food]].filter(([, value]) => value <= 0).map(([name]) => name);
         endMission(depleted.length ? `Mission time elapsed, but ${depleted.join(', ')} ${depleted.length === 1 ? 'supply was' : 'supplies were'} depleted. Restore every essential life-support resource to meet the survival objective.` : 'completed');
@@ -458,7 +499,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
       if (state.ended) break;
       if (!options.force && state.lastEvent !== oldEvent) break;
       if (!options.force && (oldStormActive !== state.storm.active || oldRadiationActive !== state.radiation.active)) break;
-      if (!options.force && ((!state.storm.active && !state.storm.passed && (state.researchBonus ? [36, 24, 12, 6, 1] : [24, 12, 6, 1]).some(t => oldEta > t && state.storm.eta <= t)) || (!state.radiation.active && !state.radiation.passed && [24, 12, 6, 1].some(t => oldRadiationEta > t && state.radiation.eta <= t)))) break;
+      if (!options.force && ((!state.storm.active && !state.storm.passed && dustWarningThresholds(state).some(t => oldEta > t && state.storm.eta <= t)) || (!state.radiation.active && !state.radiation.passed && radiationWarningThresholds(state).some(t => oldRadiationEta > t && state.radiation.eta <= t)))) break;
     }
     if (advanced > 0.001 && !state.ended) {
       log(`Time advanced by ${advanced.toFixed(1).replace(/\.0$/, '')} hour(s).`, 'normal');
@@ -519,8 +560,9 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
         state.greenhouseOn = false; log('Greenhouse paused to preserve power and water.', 'warning'); onEffect('greenhouse-off'); onSound('power-off'); break;
       case 'harvest':
         if (!state.cropReady) { onToast('Crops are not mature yet.', 'warning'); return; }
-        state.food = clamp(state.food + 8, 0, 40); state.cropProgress = 0; state.cropReady = false;
-        log('Greenhouse harvest collected: +8 food rations.', 'success'); onEffect('harvest'); onSound('harvest'); break;
+        const yieldAmount = DIFFICULTY_PROFILES[state.difficulty]?.cropYield || 8;
+        state.food = clamp(state.food + yieldAmount, 0, 40); state.cropProgress = 0; state.cropReady = false;
+        log(`Greenhouse harvest collected: +${yieldAmount} food rations.`, 'success'); onEffect('harvest'); onSound('harvest'); break;
       case 'ration':
         state.rationing = true; state.rationHours = 24; log('Emergency rationing enabled for 24 hours. Food use reduced by 25%.', 'warning'); onEffect('ration'); onSound('click'); break;
       case 'ration-off':
@@ -581,10 +623,10 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     refresh();
   }
 
-  function reset(days = state.missionDays, destination = state.destination || 'moon') {
-    state = initialState(days, destination); lastSupplyAlert = -99; lastPowerAlert = -99; lastThresholdAlert = -99;
-    log(`Mission systems initialized for ${state.destination === 'mars' ? 'Mars' : 'the Moon'}. Solar panels are stowed and OFF; battery reserve is 28/48 kWh.`);
-    log(`Hazard plan: ${state.storm.eventsPlanned} short dust front${state.storm.eventsPlanned === 1 ? '' : 's'}; first arrival in ${state.storm.eta}h, expected duration ${state.storm.duration}h. Each new mission varies the schedule and severity.`, 'warning');
+  function reset(days = state.missionDays, destination = state.destination || 'moon', difficulty = state.difficulty || 'specialist') {
+    state = initialState(days, destination, difficulty); lastSupplyAlert = -99; lastPowerAlert = -99; lastThresholdAlert = -99;
+    log(`Mission systems initialized for ${state.destination === 'mars' ? 'Mars' : 'the Moon'} · ${state.difficulty.toUpperCase()} difficulty. Solar panels are stowed and OFF; starting battery reserve is ${state.power}/${MAX_POWER} kWh.`);
+    log(`Hazard plan: ${state.storm.eventsPlanned} ${state.destination === 'mars' ? 'Martian atmospheric dust front(s)' : 'lunar electrostatic dust event(s)'}; first arrival in ${state.storm.eta}h, expected duration ${state.storm.duration}h. Schedule and severity vary by mission.`, 'warning');
     log(`Separate solar-particle radiation event forecast in ${state.radiation.eta}h for ${state.radiation.duration}h. Shelter the crew; the equipment shield does not protect them.`, 'warning');
     refresh();
   }
@@ -626,7 +668,7 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     const value = Number(days);
     if (!Number.isFinite(value) || value < 1) return;
     state.missionDays = Math.round(value);
-    log(`Mission duration target set to ${state.missionDays} days from mission start.`); refresh();
+    log(`Mission duration target set to ${state.missionDays} ${state.destination === 'mars' ? 'sols' : 'days'} from mission start.`); refresh();
   }
   function clearLog() { state.log = []; log('Mission log view cleared. Simulation state unchanged.'); refresh(); }
   function save() { return getState(); }
@@ -634,13 +676,19 @@ export function createGame({ onChange = () => {}, onToast = () => {}, onAlert = 
     if (!saved || typeof saved.hours !== 'number' || !saved.storm || !Array.isArray(saved.crewHealth)) return false;
     state = clone(saved);
     state.destination = state.destination === 'mars' ? 'mars' : 'moon';
+    state.difficulty = DIFFICULTY_PROFILES[state.difficulty] ? state.difficulty : 'specialist';
     if (!Number.isFinite(state.missionElapsed)) state.missionElapsed = Math.max(0, state.hours - 6);
     if (Array.isArray(state.warningsSeen)) state.warningsSeen = state.warningsSeen.filter(w => typeof w !== 'number');
     if (!Number.isFinite(state.storm.eventsCompleted)) state.storm.eventsCompleted = state.storm.passed ? 1 : 0;
     if (!Number.isFinite(state.storm.eventsPlanned)) state.storm.eventsPlanned = state.storm.passed ? state.storm.eventsCompleted : 1;
-    if (!Number.isFinite(state.storm.solarFactor) || state.storm.solarFactor <= 0 || state.storm.solarFactor >= 1) state.storm.solarFactor = randomFloat(0.22, 0.38);
-    if (state.storm.duration > 8) state.storm.duration = state.storm.active ? Math.max(state.storm.elapsed + 1, randomInt(3, 6)) : randomInt(3, 6);
-    if (!state.radiation || typeof state.radiation !== 'object') state.radiation = { eta: randomInt(32, 64), active: false, elapsed: 0, duration: randomInt(2, 4), passed: false, exposure: 0, damagePerHour: randomFloat(1.4, 2.0) };
+    if (!Number.isFinite(state.storm.solarFactor) || state.storm.solarFactor <= 0 || state.storm.solarFactor >= 1 || (state.destination === 'moon' && state.storm.solarFactor < 0.65)) state.storm.solarFactor = state.destination === 'moon' ? randomFloat(0.72, 0.90) : randomFloat(0.22, 0.38);
+    const profile = DIFFICULTY_PROFILES[state.difficulty] || DIFFICULTY_PROFILES.specialist;
+    const durationMin = state.destination === 'moon' ? Math.max(1, profile.stormMin - 1) : profile.stormMin;
+    const durationMax = state.destination === 'moon' ? Math.max(2, profile.stormMax - 2) : profile.stormMax;
+    if (state.storm.duration > 8) state.storm.duration = state.storm.active ? Math.max(state.storm.elapsed + 1, randomInt(durationMin, durationMax)) : randomInt(durationMin, durationMax);
+    if (!state.radiation || typeof state.radiation !== 'object') state.radiation = { eta: randomInt(32, 64), active: false, elapsed: 0, duration: randomInt(2, 4), passed: false, exposure: 0, damagePerHour: randomFloat(1.4, 2.0), surfaceReferenceMicroGyPerDay: state.destination === 'mars' ? 210 : null, cumulativeSurfaceReferenceMicroGy: 0 };
+    if (state.destination === 'mars') { state.radiation.surfaceReferenceMicroGyPerDay = 210; if (!Number.isFinite(state.radiation.cumulativeSurfaceReferenceMicroGy)) state.radiation.cumulativeSurfaceReferenceMicroGy = 0; }
+    else { state.radiation.surfaceReferenceMicroGyPerDay = null; state.radiation.cumulativeSurfaceReferenceMicroGy = 0; }
     if (!Number.isFinite(state.radiation.damagePerHour)) state.radiation.damagePerHour = randomFloat(1.4, 2.0);
     if (!state.radiation.passed && !state.radiation.active && state.radiation.eta > 72) state.radiation.eta = randomInt(32, 64);
     if (state.radiation.duration > 5) state.radiation.duration = state.radiation.active ? Math.max(state.radiation.elapsed + 1, randomInt(2, 4)) : randomInt(2, 4);

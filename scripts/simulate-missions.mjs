@@ -1,65 +1,48 @@
-import { createGame } from '../src/game.js';
+import { createGame, DIFFICULTY_PROFILES, getMissionDayHours } from '../src/game.js';
 
-function seeded(seed) {
-  let x = seed >>> 0;
-  return () => { x = (1664525 * x + 1013904223) >>> 0; return x / 4294967296; };
+const quiet = { onChange() {}, onToast() {}, onAlert() {}, onEffect() {}, onSound() {} };
+const levels = ['cadet', 'specialist', 'commander'];
+const worlds = ['moon', 'mars'];
+const durations = [7, 14, 30];
+const seeds = [1, 17, 91];
+let failures = 0, completed = 0;
+
+function useSeed(value) {
+  let seed = value >>> 0;
+  Math.random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
 }
 
-export function runManagedMission(days, seed) {
-  const originalRandom = Math.random;
-  Math.random = seeded(seed);
-  try {
-    const game = createGame({ onChange: () => {}, onToast: () => {}, onAlert: () => {}, onEffect: () => {}, onSound: () => {} });
-    game.reset(days, seed % 2 ? 'moon' : 'mars');
-    let steps = 0;
-    while (steps++ < days * 40) {
-      let s = game.getState();
-      if (s.ended) break;
-      if (!s.panelsDeployed) game.perform('deploy');
-      s = game.getState(); if (!s.panelsActive) game.perform('activate-panels');
-      s = game.getState(); if (!s.oxygenGenerator) game.perform('oxygen-on');
-      s = game.getState(); if (!s.recyclerOn) game.perform('recycler-on');
-      s = game.getState(); if (!s.greenhouseOn && s.food > 10 && (s.power > 12 || s.food < 20)) game.perform('greenhouse-on');
-      s = game.getState(); if (s.cropReady) game.perform('harvest');
-      s = game.getState(); if (s.food <= 8 && !s.rationing) game.perform('ration');
-      s = game.getState(); if (s.rationing && s.rationHours <= 0) game.perform('ration-off');
-      s = game.getState(); if (!s.shieldInspected && !s.storm.passed) game.perform('inspect-shield');
-      s = game.getState(); if (!s.radiationShelter && !s.radiation.passed && s.radiation.eta <= 24) game.perform('radiation-shelter');
-      s = game.getState(); if (s.radiationShelter && s.radiation.passed) game.perform('radiation-shelter-off');
-      s = game.getState(); if (s.storm.active && !s.shieldActive && s.power >= 2) game.perform('activate-shield');
-      s = game.getState(); if (!s.storm.active && !s.storm.passed && s.storm.eta <= 1 && !s.shieldActive && s.power >= 2) game.perform('activate-shield');
-      s = game.getState();
-      const surfaceSafe = !s.storm.active && (s.storm.passed || s.storm.eta > 8) && !s.radiation.active && (s.radiation.passed || s.radiation.eta > 2) && !s.radiationShelter;
-      if (surfaceSafe && s.panelHealth < 90 && s.materials >= 3) game.perform('repair-panels');
-      s = game.getState();
-      if (surfaceSafe && s.panelDust >= 12 && s.materials >= 1) game.perform('clean-panels');
-      s = game.getState();
-      if (surfaceSafe && !s.roverOut && s.roverReady && s.materials < 3 && s.power > 12) game.perform('collect-materials');
-      s = game.getState(); if (s.power < 15 && s.greenhouseOn && s.food > 16) game.perform('greenhouse-off');
-      s = game.getState(); if (s.power > 18 && !s.greenhouseOn && s.food < 24) game.perform('greenhouse-on');
-      s = game.getState(); if (s.ended) break;
-      game.advance((s.storm.active || s.radiation.active) ? 1 : 6, { silent: true });
-    }
+for (const seed of seeds) for (const world of worlds) for (const level of levels) for (const days of durations) {
+  useSeed(seed * 1009 + days * 31 + world.length * 7 + levels.indexOf(level));
+  const game = createGame(quiet);
+  game.reset(days, world, level);
+  game.perform('deploy');
+  game.perform('activate-panels');
+  game.perform('oxygen-on');
+  game.perform('recycler-on');
+  game.perform('greenhouse-on');
+  game.perform('inspect-shield');
+  const warningHours = DIFFICULTY_PROFILES[level].warningHours;
+  let steps = 0;
+  while (!game.getState().ended && steps < days * getMissionDayHours(world) + 24) {
     const s = game.getState();
-    return { days, seed, steps, ended: s.ended, won: s.won, elapsed: s.missionElapsed, power: s.power, oxygen: s.oxygen, water: s.water, food: s.food, crewHealth: Math.min(...s.crewHealth), frontsCompleted: s.storm.eventsCompleted, frontsPlanned: s.storm.eventsPlanned, radiationPassed: s.radiation.passed, endReason: s.endReason };
-  } finally {
-    Math.random = originalRandom;
+    if (s.cropReady) game.perform('harvest');
+    if (!s.radiation.passed && !s.radiationShelter && s.radiation.eta <= warningHours) game.perform('radiation-shelter');
+    if (s.radiation.passed && s.radiationShelter) game.perform('radiation-shelter-off');
+    if (!s.storm.passed && s.storm.eta <= 1 && !s.shieldActive) game.perform('activate-shield');
+    if (s.storm.active && !s.stormPrep) game.perform('storm-prep');
+    const safeToService = s.storm.passed || s.storm.eta > 8;
+    if (safeToService && s.panelDust > 18 && s.materials >= 1) game.perform('clean-panels');
+    if (safeToService && s.panelHealth < 78 && s.materials >= 3) game.perform('repair-panels');
+    game.advance(1, { force: true, silent: true });
+    steps++;
   }
+  const result = game.getState();
+  const valid = result.ended && result.won && Math.abs(result.missionElapsed - days * getMissionDayHours(world)) < 1e-7 && result.power >= 0 && result.oxygen > 0 && result.water > 0 && result.food > 0 && Math.min(...result.crewHealth) > 0;
+  if (!valid) failures++;
+  else completed++;
+  console.log(`${valid ? 'PASS' : 'FAIL'} seed=${seed} ${world.padEnd(4)} ${level.padEnd(10)} ${String(days).padStart(2)}d · power ${result.power.toFixed(1)} · food ${result.food.toFixed(1)} · water ${result.water.toFixed(1)} · crew ${Math.min(...result.crewHealth).toFixed(0)}%`);
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
-  const summaries = [];
-  for (const days of [7, 14, 30]) {
-    const runs = Array.from({ length: 10 }, (_, i) => runManagedMission(days, i + 1));
-    summaries.push({
-      days,
-      passed: runs.filter(r => r.won && Math.round(r.elapsed) === days * 24).length,
-      total: runs.length,
-      lowestFinalPower: Math.min(...runs.map(r => r.power)),
-      lowestFinalCrewHealth: Math.min(...runs.map(r => r.crewHealth)),
-      failedRuns: runs.filter(r => !r.won).map(r => ({ seed: r.seed, reason: r.endReason, elapsed: r.elapsed }))
-    });
-  }
-  console.log(JSON.stringify(summaries, null, 2));
-  if (summaries.some(s => s.passed !== s.total)) process.exitCode = 1;
-}
+console.log(`\nFull-mission simulations: ${completed}/${completed + failures} passed.`);
+if (failures) process.exitCode = 1;
