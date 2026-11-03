@@ -514,9 +514,12 @@ $('#save-button').addEventListener('click',saveMission);$('#load-button').addEve
 $('#modal-close').addEventListener('click',()=>$('#modal-backdrop').classList.add('hidden'));
 $('#modal-backdrop').addEventListener('click',e=>{if(e.target.id==='modal-backdrop')$('#modal-backdrop').classList.add('hidden');});
 $('#scene-inspect').addEventListener('click',()=>showModal('scene'));
+const skyLabelButton=$('#sky-label-toggle');
+skyLabelButton?.addEventListener('click',()=>{const visible=scene.toggleSkyLabels();skyLabelButton.textContent=`SKY LABELS: ${visible?'ON':'OFF'}`;skyLabelButton.setAttribute('aria-pressed',String(visible));});
 $('#mobile-ops').addEventListener('click',()=>$('#control-rail').classList.toggle('rail-open'));
 window.addEventListener('keydown',e=>{
   if(e.key==='Escape'){$('#modal-backdrop').classList.add('hidden');$('#event-overlay').classList.add('hidden');$('#inspect-menu').classList.add('hidden');$('#control-rail').classList.remove('rail-open');}
+  if(e.key.toLowerCase()==='l'&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){const visible=scene.toggleSkyLabels();if(skyLabelButton){skyLabelButton.textContent=`SKY LABELS: ${visible?'ON':'OFF'}`;skyLabelButton.setAttribute('aria-pressed',String(visible));}}
   if(e.key==='1')selectRoom('engineering');if(e.key==='2')selectRoom('life-support');if(e.key==='3')selectRoom('greenhouse');
   if(e.key==='4')selectRoom('crew');if(e.key==='5')selectRoom('rover');if(e.key==='6')selectRoom('research');
   if(e.code==='Space'&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();game.advance(1);}

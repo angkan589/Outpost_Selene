@@ -39,6 +39,27 @@ export function createLunarScene(canvas) {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), rockMat);
     rock.position.set(Math.cos(a) * r, -.12, Math.sin(a) * r - 6); rock.rotation.set(Math.random() * 2, Math.random() * 2, Math.random() * 2); rock.scale.y = .45 + Math.random() * .6; scene.add(rock);
   }
+
+  // Low distant ridges add a visible horizon without blocking the outpost.
+  const horizonGroup = new THREE.Group(); scene.add(horizonGroup);
+  const horizonFarMat = mat(0x424a58, 1, 0);
+  const horizonNearMat = mat(0x555b68, 1, 0);
+  for (let i = 0; i < 22; i++) {
+    const x = -38 + i * 3.6 + (Math.random() - .5) * 1.5;
+    const z = -27 - Math.random() * 9;
+    const height = 2.6 + Math.random() * 4.8;
+    const radius = 2.4 + Math.random() * 3.6;
+    const peak = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 5 + (i % 3)), i % 2 ? horizonFarMat : horizonNearMat);
+    peak.position.set(x, height * .47 - .25, z); peak.rotation.y = Math.random() * Math.PI; peak.rotation.z = (Math.random() - .5) * .16;
+    horizonGroup.add(peak);
+  }
+  for (let i = 0; i < 15; i++) {
+    const x = -34 + i * 4.8 + (Math.random() - .5) * 2;
+    const z = -34 - Math.random() * 8;
+    const height = 3.5 + Math.random() * 5.5;
+    const peak = new THREE.Mesh(new THREE.ConeGeometry(3.5 + Math.random() * 3, height, 6), horizonFarMat);
+    peak.position.set(x, height * .45 - .35, z); peak.rotation.y = Math.random() * Math.PI; horizonGroup.add(peak);
+  }
   const starGeo = new THREE.BufferGeometry(), starPoints = [];
   for (let i = 0; i < 1000; i++) starPoints.push((Math.random() - .5) * 160, 8 + Math.random() * 75, -35 - Math.random() * 65);
   starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPoints, 3));
@@ -79,6 +100,42 @@ export function createLunarScene(canvas) {
     const cosAlt = Math.cos(altitude);
     group.position.set(Math.sin(azimuth) * cosAlt * radius, Math.sin(altitude) * radius + 5.5, -26 + Math.cos(azimuth) * cosAlt * radius);
     group.scale.setScalar(scale);
+  }
+
+  // Readable, optional labels make the moving sky a small astronomy lesson.
+  function makeSkyLabel(title, subtitle) {
+    const labelCanvas = document.createElement('canvas'); labelCanvas.width = 512; labelCanvas.height = 128;
+    const ctx = labelCanvas.getContext('2d');
+    ctx.fillStyle = 'rgba(5, 13, 24, 0.82)';
+    ctx.beginPath(); ctx.roundRect(5, 5, 502, 118, 18); ctx.fill();
+    ctx.strokeStyle = 'rgba(123, 218, 241, 0.78)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#eaf8ff'; ctx.font = '700 36px Arial, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(title, 256, 57, 470);
+    ctx.fillStyle = '#8ed8eb'; ctx.font = '20px Arial, sans-serif';
+    ctx.fillText(subtitle, 256, 91, 470);
+    const texture = new THREE.CanvasTexture(labelCanvas); texture.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
+    const sprite = new THREE.Sprite(material); sprite.scale.set(3.15, .79, 1); sprite.renderOrder = 1000; scene.add(sprite);
+    return sprite;
+  }
+  const skyLabels = {
+    sun: makeSkyLabel('SUN', 'STAR · LIGHT + HEAT'),
+    earth: makeSkyLabel('EARTH', 'BLUE PLANET · OUR HOME'),
+    mars: makeSkyLabel('MARS', 'RED PLANET'),
+    venus: makeSkyLabel('VENUS', 'TERRESTRIAL PLANET'),
+    jupiter: makeSkyLabel('JUPITER', 'GAS GIANT'),
+    saturn: makeSkyLabel('SATURN', 'RINGED GAS GIANT'),
+    phobos: makeSkyLabel('PHOBOS', 'INNER MOON OF MARS'),
+    deimos: makeSkyLabel('DEIMOS', 'OUTER MOON OF MARS')
+  };
+  let skyLabelsVisible = true;
+  function moveSkyLabel(label, body, drop = 1.7) {
+    label.position.copy(body.position); label.position.y -= drop;
+  }
+  function setSkyLabelsVisible(visible) {
+    skyLabelsVisible = Boolean(visible);
+    Object.values(skyLabels).forEach(label => { label.visible = skyLabelsVisible; });
+    return skyLabelsVisible;
   }
 
   const hardware = mat(0xa9b7c7, .38, .72), darkMetal = mat(0x2b3c50, .5, .6), whiteShell = mat(0xd0d8e2, .38, .22);
@@ -289,6 +346,8 @@ export function createLunarScene(canvas) {
     rimLight.color.setHex(next === 'mars' ? 0xd77d68 : 0x5b9fff);
     rockMat.color.setHex(next === 'mars' ? 0xa55e49 : 0x6e707b);
     craterMat.color.setHex(next === 'mars' ? 0x512d2b : 0x353b49);
+    horizonFarMat.color.setHex(next === 'mars' ? 0x653a32 : 0x424a58);
+    horizonNearMat.color.setHex(next === 'mars' ? 0x8a4b3c : 0x555b68);
     baseGlow.color.setHex(next === 'mars' ? 0xffc09f : 0x63dff6);
     const terrainColors = terrainGeo.attributes.color;
     for (let i = 0; i < terrainColors.count; i++) {
@@ -385,14 +444,21 @@ export function createLunarScene(canvas) {
     if (latest?.storm.active) dustPoints.rotation.x = Math.sin(t * .3) * .03;
 
     const destination = latest?.destination || activeDestination || 'moon';
-    const dayLength = destination === 'mars' ? 24.66 : 24;
     const hours = latest?.hours ?? t * 2;
-    const dayFrac = ((hours % dayLength) + dayLength) % dayLength / dayLength;
-    const cycle = dayFrac * Math.PI * 2;
-    const moonSunAlt = Math.sin(cycle - Math.PI / 2) * .6 + .18;
-    const marsSunAlt = Math.sin(cycle - Math.PI / 2) * .82 + .05;
+    const marsDayLength = 24.66;
+    const marsDayFrac = ((hours % marsDayLength) + marsDayLength) % marsDayLength / marsDayLength;
+    const marsCycle = marsDayFrac * Math.PI * 2;
+    // Keep the visual lunar light cycle consistent with the game's 168-hour
+    // south-polar ridge scenario: 132h of strong illumination, then 36h low light.
+    const lunarPhaseHours = ((hours % 168) + 168) % 168;
+    const lunarLightPhase = lunarPhaseHours < 132;
+    const lunarProgress = lunarLightPhase ? lunarPhaseHours / 132 : (lunarPhaseHours - 132) / 36;
+    const moonSunAlt = lunarLightPhase
+      ? .20 + Math.sin(lunarProgress * Math.PI * 2) * .075
+      : -.16 + Math.sin(lunarProgress * Math.PI * 2) * .025;
+    const marsSunAlt = Math.sin(marsCycle - Math.PI / 2) * .82 + .05;
     const sunAlt = destination === 'mars' ? marsSunAlt : moonSunAlt;
-    const sunAz = cycle + (destination === 'mars' ? .55 : -.8);
+    const sunAz = destination === 'mars' ? marsCycle + .55 : lunarPhaseHours / 168 * Math.PI * 2 - Math.PI - .8;
     placeSkyBody(sun, sunAz, sunAlt, destination === 'mars' ? 34 : 38, destination === 'mars' ? .82 : 1);
     sunLight.position.copy(sun.position);
     keyLight.position.copy(sun.position.clone().normalize().multiplyScalar(18));
@@ -407,20 +473,31 @@ export function createLunarScene(canvas) {
       placeSkyBody(saturn, 1.25, .82, 54, 1);
       earth.visible = mars.visible = venus.visible = jupiter.visible = saturn.visible = true;
       phobos.visible = deimos.visible = false;
-      starsMaterial.opacity = THREE.MathUtils.damp(starsMaterial.opacity, moonSunAlt > .05 ? .56 : .86, 2.2, dt);
-      renderer.toneMappingExposure = THREE.MathUtils.damp(renderer.toneMappingExposure, moonSunAlt > .15 ? 1.1 : 1.28, 1.6, dt);
+      moveSkyLabel(skyLabels.sun, sun, 3.1); moveSkyLabel(skyLabels.earth, earth, 2.0);
+      moveSkyLabel(skyLabels.mars, mars, 1.55); moveSkyLabel(skyLabels.venus, venus, 1.25);
+      moveSkyLabel(skyLabels.jupiter, jupiter, 1.65); moveSkyLabel(skyLabels.saturn, saturn, 1.55);
+      skyLabels.sun.visible = skyLabels.earth.visible = skyLabels.mars.visible = skyLabels.venus.visible = skyLabels.jupiter.visible = skyLabels.saturn.visible = skyLabelsVisible;
+      skyLabels.phobos.visible = skyLabels.deimos.visible = false;
+      starsMaterial.opacity = THREE.MathUtils.damp(starsMaterial.opacity, lunarLightPhase ? .56 : .86, 2.2, dt);
+      renderer.toneMappingExposure = THREE.MathUtils.damp(renderer.toneMappingExposure, lunarLightPhase ? 1.1 : 1.28, 1.6, dt);
     } else {
-      const earthAz = cycle + 1.9;
-      const earthAlt = Math.sin(cycle + 1.2) * .55 + .15;
+      const earthAz = marsCycle + 1.9;
+      const earthAlt = Math.sin(marsCycle + 1.2) * .55 + .15;
       placeSkyBody(earth, earthAz, earthAlt, 42, .18);
       placeSkyBody(venus, -0.55, .65, 42, .85);
       placeSkyBody(jupiter, 1.18, .72, 55, 1);
       placeSkyBody(saturn, .15, .56, 60, .92);
-      placeSkyBody(phobos, cycle * 2.8 - 1.3, Math.sin(cycle * 2.8) * .18 + .42, 17, 1);
-      placeSkyBody(deimos, cycle * .8 + 1.8, Math.sin(cycle * .8 + .7) * .1 + .68, 24, 1);
+      placeSkyBody(phobos, marsCycle * 2.8 - 1.3, Math.sin(marsCycle * 2.8) * .18 + .42, 17, 1);
+      placeSkyBody(deimos, marsCycle * .8 + 1.8, Math.sin(marsCycle * .8 + .7) * .1 + .68, 24, 1);
       earth.visible = venus.visible = jupiter.visible = saturn.visible = true;
       mars.visible = false;
       phobos.visible = deimos.visible = true;
+      moveSkyLabel(skyLabels.sun, sun, 2.8); moveSkyLabel(skyLabels.earth, earth, .65);
+      moveSkyLabel(skyLabels.venus, venus, 1.2); moveSkyLabel(skyLabels.jupiter, jupiter, 1.65);
+      moveSkyLabel(skyLabels.saturn, saturn, 1.55); moveSkyLabel(skyLabels.phobos, phobos, .75);
+      moveSkyLabel(skyLabels.deimos, deimos, .65);
+      skyLabels.sun.visible = skyLabels.earth.visible = skyLabels.venus.visible = skyLabels.jupiter.visible = skyLabels.saturn.visible = skyLabels.phobos.visible = skyLabels.deimos.visible = skyLabelsVisible;
+      skyLabels.mars.visible = false;
       starsMaterial.opacity = THREE.MathUtils.damp(starsMaterial.opacity, marsSunAlt > .08 ? .2 : .45, 2.2, dt);
       renderer.toneMappingExposure = THREE.MathUtils.damp(renderer.toneMappingExposure, marsSunAlt > .12 ? .98 : 1.12, 1.6, dt);
     }
@@ -443,5 +520,5 @@ export function createLunarScene(canvas) {
     const look = cameraTarget.clone(); look.x += Math.sin(t * .14) * .035; camera.lookAt(look); renderer.render(scene, camera);
   }
   animate();
-  return { update, setRoom, setDestination, triggerEffect, dispose() { resizeObserver.disconnect(); renderer.dispose(); } };
+  return { update, setRoom, setDestination, triggerEffect, setSkyLabelsVisible, toggleSkyLabels() { return setSkyLabelsVisible(!skyLabelsVisible); }, dispose() { resizeObserver.disconnect(); renderer.dispose(); Object.values(skyLabels).forEach(label => { label.material.map?.dispose(); label.material.dispose(); }); } };
 }
