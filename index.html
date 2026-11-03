@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#080d18">
   <meta name="description" content="Outpost Selene — a lunar and Martian outpost mission trainer.">
-  <title>OUTPOST SELENE v3.0 | Lunar & Martian Mission Trainer</title>
+  <title>OUTPOST SELENE v3.1 | Lunar & Martian Mission Trainer</title>
 </head>
 
 <body>
@@ -71,7 +71,7 @@
         <div class="launch-disclaimer">EDUCATIONAL SIMULATION · NASA research informs selected science context; resource rates and event schedules are simplified game models, not live forecasts.</div>
       </aside>
     </section>
-    <div class="launch-footer"><span>OUTPOST SELENE / MISSION TRAINER v3.0</span><span>POWER IS TIME. TIME IS
+    <div class="launch-footer"><span>OUTPOST SELENE / MISSION TRAINER v3.1</span><span>POWER IS TIME. TIME IS
         SURVIVAL.</span></div>
     <section id="auth-panel" class="auth-panel hidden" aria-modal="true" role="dialog" aria-labelledby="auth-title">
       <button id="auth-close" class="auth-close" aria-label="Close sign in">×</button>
@@ -149,13 +149,25 @@
         </div>
       </aside>
       <section class="stage" id="stage">
-        <canvas id="world-canvas" aria-label="Live 3D lunar outpost simulation"></canvas>
+        <canvas id="world-canvas" aria-label="Live 3D Moon and Mars outpost simulation"></canvas>
         <div class="stage-vignette"></div>
         <div class="stage-top-left">
           <div class="scene-tag"><span class="scene-tag-dot"></span><span id="scene-mode">EXTERIOR · SECTOR
               SEL-07</span></div>
           <div class="scene-subtitle" id="scene-subtitle">LUNAR SOUTH POLE · HABITAT ZONE</div>
-          <div class="sky-controls"><button id="sky-label-toggle" type="button" aria-pressed="true">SKY LABELS: ON</button><span>DRAG TO LOOK · SCROLL TO ZOOM · DOUBLE-CLICK TO RESET</span></div>
+          <div class="sky-controls">
+            <button id="sky-label-toggle" type="button" aria-pressed="true">SKY LABELS: ON</button>
+            <button id="walk-toggle" type="button" aria-pressed="false">WALK AROUND</button>
+            <select id="sky-target-select" aria-label="Choose a celestial body">
+              <option value="sun">SUN</option><option value="earth">EARTH</option><option value="mercury">MERCURY</option>
+              <option value="venus">VENUS</option><option value="mars">MARS</option><option value="jupiter">JUPITER</option>
+              <option value="saturn">SATURN</option><option value="uranus">URANUS</option><option value="neptune">NEPTUNE</option>
+              <option value="phobos">PHOBOS</option><option value="deimos">DEIMOS</option>
+            </select>
+            <button id="sky-center-button" type="button">CENTER BODY</button>
+            <span>DRAG TO LOOK · WASD / ARROWS TO WALK · SHIFT+DRAG TO PAN</span>
+          </div>
+          <div class="sky-readout" id="sky-readout" aria-live="polite">SKY CALCULATING · JPL APPROXIMATE POSITIONS</div>
         </div>
         <div class="stage-top-right">
           <div class="mini-weather" id="mini-weather"><span class="weather-glyph">☼</span>
@@ -171,6 +183,13 @@
           <div><span>O₂ GEN</span><b id="readout-oxygen">OFFLINE</b></div>
           <div><span>ROVER</span><b id="readout-rover">DOCKED</b></div>
         </div>
+        <div class="walk-pad hidden" id="walk-pad" aria-label="Surface movement controls">
+          <button type="button" data-walk-move="forward" aria-label="Move forward">▲</button>
+          <button type="button" data-walk-move="left" aria-label="Move left">◀</button>
+          <button type="button" data-walk-move="back" aria-label="Move backward">▼</button>
+          <button type="button" data-walk-move="right" aria-label="Move right">▶</button>
+          <small>WASD / ARROWS</small>
+        </div>
         <div class="stage-bottom-left">
           <div class="scene-event-icon" id="scene-event-icon">◈</div>
           <div><small id="scene-event-kicker">SYSTEM READY</small><b id="scene-event-title">Awaiting command</b>
@@ -178,7 +197,7 @@
           </div>
         </div>
         <div class="stage-bottom-right"><span class="camera-status"><i></i> LIVE FEED</span><span
-            class="tiny-coord">68.2°S · 31.8°E</span></div>
+            class="tiny-coord" id="site-coordinates">68.2°S · 31.8°E</span></div>
         <section class="activity-hud" id="activity-hud">
           <div class="activity-hud-head"><span id="activity-hud-icon">ϟ</span>
             <div><small id="activity-hud-kicker">ENGINEERING TELEMETRY</small><b id="activity-hud-title">Power

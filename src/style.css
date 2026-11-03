@@ -115,3 +115,43 @@
 /* Celestial navigation guide and optional educational sky labels. */
 .sky-controls{display:flex;align-items:center;gap:9px;margin-top:9px;pointer-events:auto}.sky-controls button{height:24px;padding:0 8px;border:1px solid #4a7187;border-radius:6px;background:#071522d9;color:#a9eaf5;font:7px 'DM Mono',monospace;letter-spacing:.07em;cursor:pointer}.sky-controls button:hover,.sky-controls button[aria-pressed="true"]{border-color:#79d9eb;color:#e6fbff;background:#0e2938}.sky-controls span{color:#7892a9;font:6px 'DM Mono',monospace;letter-spacing:.07em;text-shadow:0 1px 4px #000}
 @media(max-width:760px){.sky-controls{margin-top:6px;gap:0}.sky-controls button{height:22px;font-size:6px}.sky-controls span{display:none}}
+
+
+/* v3.1 — astronomical sky guide and walkable surface controls */
+.sky-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:min(820px,calc(100vw - 250px));margin-top:9px;pointer-events:auto}
+.sky-controls button,.sky-controls select{height:27px;padding:0 9px;border:1px solid #4a7187;border-radius:6px;background:#071522ed;color:#bdeef7;font:700 8px 'DM Mono',monospace;letter-spacing:.045em;cursor:pointer}
+.sky-controls button:hover,.sky-controls button[aria-pressed="true"]{border-color:#79d9eb;color:#e6fbff;background:#0e2938}
+.sky-controls select{max-width:104px;padding-right:5px;outline-offset:2px}
+.sky-controls span{flex-basis:100%;color:#91a8bc;font:7px 'DM Mono',monospace;letter-spacing:.045em;text-shadow:0 1px 4px #000}
+.sky-readout{display:inline-block;max-width:min(690px,calc(100vw - 260px));margin-top:7px;padding:5px 8px;border:1px solid #5e9eb333;border-radius:6px;background:#06111dd9;color:#b8d3e4;font:7px/1.5 'DM Mono',monospace;letter-spacing:.04em;text-shadow:0 1px 4px #000;pointer-events:none}
+.walk-pad{position:absolute;z-index:5;left:18px;bottom:104px;display:grid;grid-template-columns:34px 34px 34px;grid-template-rows:32px 32px 32px;gap:4px;padding:8px;border:1px solid #5a81965c;border-radius:12px;background:#07111fe8;backdrop-filter:blur(10px);box-shadow:0 8px 24px #0006}
+.walk-pad button{width:34px;height:32px;border:1px solid #44677d;border-radius:7px;background:#12283a;color:#c8eff8;font-size:12px}
+.walk-pad button:hover{background:#1a3b50;border-color:#79d9eb}
+.walk-pad button[data-walk-move="forward"]{grid-column:2;grid-row:1}
+.walk-pad button[data-walk-move="left"]{grid-column:1;grid-row:2}
+.walk-pad button[data-walk-move="back"]{grid-column:2;grid-row:2}
+.walk-pad button[data-walk-move="right"]{grid-column:3;grid-row:2}
+.walk-pad small{grid-column:1/4;text-align:center;color:#91a8bc;font:6px 'DM Mono',monospace;letter-spacing:.1em;padding-top:2px}
+@media(max-width:1000px){
+  .sky-controls{max-width:calc(100vw - 230px)}
+  .sky-controls span{display:none}
+  .sky-readout{max-width:calc(100vw - 240px)}
+}
+@media(max-width:760px){
+  .sky-controls{max-width:calc(100vw - 28px);gap:4px;margin-top:6px}
+  .sky-controls button,.sky-controls select{height:24px;padding:0 6px;font-size:6px}
+  .sky-controls select{max-width:82px}
+  .sky-readout{max-width:calc(100vw - 32px);font-size:6px;margin-top:5px}
+  .walk-pad{left:10px;bottom:96px;transform:scale(.9);transform-origin:bottom left}
+}
+
+.sky-modal-heading{margin:22px 0 10px;color:#a9d9e8;font:700 10px 'DM Mono',monospace;letter-spacing:.12em}
+.sky-body-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.sky-body-row{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:8px 9px;border:1px solid #ffffff12;border-radius:7px;background:#0b1928}
+.sky-body-row b{color:#e5f5ff;font:700 9px 'DM Mono',monospace}
+.sky-body-row span{color:#8de0b7;font:7px 'DM Mono',monospace}
+.sky-body-row span:where(:not(:empty)){text-align:right}
+.sky-body-row small{grid-column:1/3;color:#839db4;font:7px 'DM Mono',monospace}
+@media(max-width:600px){.sky-body-list{grid-template-columns:1fr}}
+
+#world-canvas{touch-action:none}

@@ -1,13 +1,16 @@
-OUTPOST SELENE v3.0
+OUTPOST SELENE v3.1
 
 Rebuild focus: interactive onboarding, three meaningful difficulty profiles, Moon/Mars-specific solar, dust and mission-clock models, resource balancing, NASA science provenance, and repeatable mission simulations.
 
 Validation performed in the authoring environment:
 - node --check src/game.js
 - node --check src/main.js
+- node --check src/astronomy.js
+- node --check src/scene.js
+- node --check tests/astronomy.test.js
 - node --check tests/game.test.js
 - node --check scripts/simulate-missions.mjs
-- npm test: 12 unit tests
+- npm test: 18 tests (12 gameplay + 6 astronomy)
 - npm run test:sim: 54 seeded full-mission simulations (all passed)
 
 A Vite production build could not be run in this environment because npm dependency installation timed out while attempting to reach the package registry. Run npm ci and npm run build on the Mac before publishing.
@@ -15,3 +18,15 @@ A Vite production build could not be run in this environment because npm depende
 NASA science provenance: NASA LRO illumination mapping informs the simplified lunar light/shadow scenario; the published Curiosity RAD value (~210 µGy/day) is used as a Mars surface-environment reference counter; NASA Veggie and BVAD inform the crop and life-support context. No live NASA API feed or operational forecast is integrated. The in-game Science Desk states this explicitly.
 
 Authentication: local-browser demo only; not server-backed or cloud-synced.
+
+
+v3.1 celestial and surface-navigation upgrade:
+- JPL approximate planetary orbital elements (1800–2050) plus IAU Moon/Mars rotation models calculate local azimuth/altitude.
+- Moon sky includes Earth and Mercury–Neptune; Earth remains near its fixed lunar-sky region.
+- Mars sky includes Earth, Mercury, Venus, Jupiter, Saturn, Uranus, Neptune, Phobos and Deimos.
+- Sun position and local sunrise/sunset update when simulation time advances. Mars follows the 24.66-hour sol; lunar sky follows the approximately 29.53-day solar cycle.
+- Scene Inspector lists each modeled body's altitude, azimuth and horizon status. Planet markers are deliberately enlarged for learning.
+- Walk Around adds first-person surface movement with WASD/arrow keys and an on-screen movement pad; drag to look. Orbit mode supports Shift+drag pan.
+- Moon terrain retains crater features; Mars has distinct red dunes and mesas.
+- Astronomical sky is a JPL/IAU educational approximation, not a live JPL Horizons feed. Moon battery gameplay retains its separate 168-hour training illumination schedule.
+- Validation: 18/18 tests passed; 54/54 seeded full-mission simulations passed. Syntax checks passed. Vite build remains to be confirmed after npm ci on the Mac.
