@@ -1,4 +1,4 @@
-OUTPOST SELENE v3.2
+OUTPOST SELENE v3.3
 
 Rebuild focus: interactive onboarding, three meaningful difficulty profiles, Moon/Mars-specific solar, dust and mission-clock models, resource balancing, NASA science provenance, and repeatable mission simulations.
 
@@ -40,3 +40,12 @@ v3.2 visual-layout and celestial-camera update:
 - Repositioned informational toasts above the bottom HUD, made the operations rail scroll rather than clip, and removed the power-plan card's fixed-height clipping.
 - Validation in the available environment: 23/23 tests passed; 54/54 full-mission simulations passed; node syntax checks passed.
 - Vite build was not available in this environment because npm dependency installation could not complete; run npm install and npm run build on the Mac before publishing.
+
+
+v3.3 action stability and screen controls:
+- Removed the five-action truncation from all room action lists.
+- Kept shield disarm and radiation shelter release visible while locked; disabled states explain the safety rule.
+- Rover launch/collection, maintenance, medical, greenhouse and research actions now show prerequisite reasons when unavailable.
+- Mission-ended actions are disabled and labelled rather than appearing active.
+- Added Clear Screen toggle (C shortcut; Escape exits) and persistent upper-right INSPECT button.
+- Added action stability and reversible-control regression tests.

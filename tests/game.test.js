@@ -163,3 +163,59 @@ test('Mars mission duration uses a 24.66-hour sol', () => {
   assert.equal(game.getState().won, true);
   assert.ok(Math.abs(game.getState().missionElapsed - 24.66) < 1e-8);
 });
+
+test('all reversible equipment and life-support controls can be switched both ways', () => {
+  const game = createGame(silent);
+  game.reset(7, 'moon', 'specialist');
+
+  game.perform('deploy');
+  game.perform('activate-panels');
+  assert.equal(game.getState().panelsActive, true);
+  game.perform('deactivate-panels');
+  assert.equal(game.getState().panelsActive, false);
+
+  game.perform('oxygen-on');
+  assert.equal(game.getState().oxygenGenerator, true);
+  game.perform('oxygen-off');
+  assert.equal(game.getState().oxygenGenerator, false);
+
+  game.perform('recycler-on');
+  assert.equal(game.getState().recyclerOn, true);
+  game.perform('recycler-off');
+  assert.equal(game.getState().recyclerOn, false);
+
+  game.perform('greenhouse-on');
+  assert.equal(game.getState().greenhouseOn, true);
+  game.perform('greenhouse-off');
+  assert.equal(game.getState().greenhouseOn, false);
+
+  game.perform('ration');
+  assert.equal(game.getState().rationing, true);
+  game.perform('ration-off');
+  assert.equal(game.getState().rationing, false);
+
+  game.perform('inspect-shield');
+  game.perform('activate-shield');
+  assert.equal(game.getState().shieldActive, true);
+  game.perform('deactivate-shield');
+  assert.equal(game.getState().shieldActive, false);
+
+  game.perform('radiation-shelter');
+  assert.equal(game.getState().radiationShelter, true);
+  game.perform('radiation-shelter-off');
+  assert.equal(game.getState().radiationShelter, false);
+});
+
+test('shield can be disarmed after the dust event has passed', () => {
+  const game = createGame(silent);
+  game.reset(7, 'mars', 'specialist');
+  const saved = game.save();
+  saved.shieldInspected = true;
+  saved.shieldActive = true;
+  saved.storm.active = false;
+  saved.storm.passed = true;
+  saved.storm.eta = -1;
+  game.load(saved);
+  game.perform('deactivate-shield');
+  assert.equal(game.getState().shieldActive, false);
+});

@@ -205,3 +205,42 @@
   .power-plan-card{max-height:none;padding:8px;overflow:visible}
   .control-rail{overflow-y:auto}
 }
+
+
+/* v3.3 — stable action controls, accessible inspection and clean-screen viewing */
+.action-disabled{border-color:#66543b;background:linear-gradient(120deg,#201d1a,#121923)}
+.action-disabled .action-copy small{color:#ffd18c}
+.action-run:disabled{opacity:.58;cursor:not-allowed;border-style:dashed;color:#a9b5c2;background:#111a25}
+.action-run:disabled:hover{background:#111a25;border-color:#596575;color:#a9b5c2}
+.action-list{flex:0 0 auto;min-height:auto;overflow:visible;gap:8px;padding:10px 0}
+.control-rail{min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.stage-expand,.stage-clear{position:absolute;z-index:32;top:82px;height:32px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;border:1px solid #3b566b;border-radius:7px;background:#07111feF;color:#c5d9e8;font:700 8px 'DM Mono',monospace;letter-spacing:.06em;box-shadow:0 5px 18px #0005}
+.stage-expand{right:16px}
+.stage-clear{right:132px}
+.stage-expand:hover,.stage-clear:hover,.stage-clear[aria-pressed="true"]{color:var(--cyan);border-color:var(--cyan);background:#0b2232}
+.stage-expand span,.stage-clear span{margin-left:2px}
+.clear-screen-mode .topbar,
+.clear-screen-mode .sidebar,
+.clear-screen-mode .control-rail,
+.clear-screen-mode .hud,
+.clear-screen-mode .stage-top-left,
+.clear-screen-mode .stage-top-right,
+.clear-screen-mode .stage-left-readout,
+.clear-screen-mode .stage-bottom-left,
+.clear-screen-mode .stage-bottom-right,
+.clear-screen-mode .activity-hud,
+.clear-screen-mode .mobile-ops{display:none!important}
+.clear-screen-mode .game-layout{height:100dvh;grid-template-columns:minmax(0,1fr);display:grid}
+.clear-screen-mode .stage{grid-column:1/-1;width:100%;height:100dvh;min-height:100dvh}
+.clear-screen-mode .stage-expand{top:14px;right:14px}
+.clear-screen-mode .stage-clear{top:14px;right:128px}
+.clear-screen-mode .toast{top:auto;right:14px;bottom:14px;left:auto;max-width:min(420px,calc(100vw - 28px));transform:translateY(10px)}
+.clear-screen-mode .toast.show{transform:translateY(0)}
+@media(max-width:760px){
+  .stage-expand,.stage-clear{top:72px;height:27px;padding:0 7px;font-size:7px}
+  .stage-expand{right:8px}
+  .stage-clear{right:104px}
+  .stage-expand span,.stage-clear span{display:inline}
+  .clear-screen-mode .stage-expand{top:10px;right:8px}
+  .clear-screen-mode .stage-clear{top:10px;right:105px}
+}

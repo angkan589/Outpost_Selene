@@ -30,11 +30,11 @@ const rooms = {
       s.panelsDeployed && !s.panelsActive && action('activate-panels','Activate solar generation',`Modeled array rating: ${getSolarRating(s.destination).toFixed(2)} kWh per full-illumination hour. Actual input changes with local light, dust and panel health.`,'ACTIVATE ARRAY','power','power-on'),
       s.panelsActive && action('deactivate-panels','Switch array electronics off','Stop output only for a deliberate power trade-off.','POWER DOWN','standard','power-off'),
       !s.shieldInspected && action('inspect-shield','Inspect storm shield','Run diagnostics and confirm energy demand.','RUN DIAGNOSTICS','standard','scan'),
-      s.shieldInspected && !s.shieldActive && action('activate-shield','Arm shield',`0.03 kWh/hour standby; 0.32 kWh/hour during this ${s.storm.duration}h front (~${(s.storm.duration*0.32).toFixed(1)} kWh). ${s.storm.active?'Activate now to reduce further array damage.':'Best activated at T−1h.'}`,'ARM SHIELD','risk','shield'),
-      s.shieldActive && !s.storm.active && !s.storm.passed && action('deactivate-shield','Disarm shield','Disarm before impact to save standby power; re-arm at T−1h. Cannot lower it during the storm.','DISARM SHIELD','standard','shield'),
-      s.panelsDeployed && s.panelDust > 4 && action('clean-panels','Clean panel surfaces',`Remove dust coverage (${s.panelDust.toFixed(0)}%). Costs 1 material.`,'CLEAN ARRAY · 1 MAT','standard','mechanical'),
-      s.panelHealth < 95 && action('repair-panels','Repair solar array',`Restore panel hardware from ${s.panelHealth.toFixed(0)}% health. Costs 3 materials.`,'REPAIR · 3 MAT','standard','mechanical')
-    ].filter(Boolean).slice(0,5)
+      s.shieldInspected && !s.shieldActive && !s.storm.passed && action('activate-shield','Arm shield',`0.03 kWh/hour standby; 0.32 kWh/hour during this ${s.storm.duration}h front (~${(s.storm.duration*0.32).toFixed(1)} kWh). ${s.storm.active?'Activate now to reduce further array damage.':'Best activated at T−1h.'}`,'ARM SHIELD','risk','shield',s.power<2?'Battery reserve is below the 2 kWh activation requirement.':''),
+      s.shieldActive && action('deactivate-shield','Disarm shield',s.storm.active?'The shield is locked during an active dust front. It becomes available when the front clears.':'Disarm to stop standby draw and conserve battery reserve.','DISARM SHIELD','standard','shield',s.storm.active?'LOCKED DURING ACTIVE DUST FRONT · Keep the shield raised until the event clears.':''),
+      s.panelsDeployed && s.panelDust > 4 && action('clean-panels','Clean panel surfaces',`Remove dust coverage (${s.panelDust.toFixed(0)}%). Costs 1 material.`,'CLEAN ARRAY · 1 MAT','standard','mechanical',s.materials < 1?'Requires 1 material unit; collect regolith with the rover first.':''),
+      s.panelHealth < 95 && action('repair-panels','Repair solar array',`Restore panel hardware from ${s.panelHealth.toFixed(0)}% health. Costs 3 materials.`,'REPAIR · 3 MAT','standard','mechanical',s.materials < 3?'Requires 3 material units; collect regolith with the rover first.':'' )
+    ].filter(Boolean)
   },
   'life-support': {
     kicker: 'ROOM 04 / CREW SURVIVAL', title: 'Life Support',
@@ -46,8 +46,8 @@ const rooms = {
       s.oxygenGenerator && action('oxygen-off','Stop oxygen generator','Saves energy, but oxygen reserve continues falling.','STOP GENERATOR','risk','power-off'),
       !s.recyclerOn && action('recycler-on','Start water recycler','Uses power to recover part of daily water demand.','START RECYCLER','power','power-on'),
       s.recyclerOn && action('recycler-off','Stop water recycler','Saves power but water use increases.','STOP RECYCLER','risk','power-off'),
-      s.oxygen < 5 && s.materials > 0 && action('emergency-oxygen','Use emergency oxygen kit','Consumes 1 material and adds 4 oxygen units.','USE O₂ KIT · 1 MAT','risk','power-on')
-    ].filter(Boolean).slice(0,5)
+      s.oxygen < 5 && action('emergency-oxygen','Use emergency oxygen kit','Consumes 1 material and adds 4 oxygen units.','USE O₂ KIT · 1 MAT','risk','power-on',s.materials < 1?'No material available. Collect regolith with the rover before using an emergency kit.':'')
+    ].filter(Boolean)
   },
   greenhouse: {
     kicker: 'ROOM 05 / FOOD SECURITY', title: 'Greenhouse',
@@ -55,12 +55,12 @@ const rooms = {
     status: s => s.cropReady ? 'HARVEST READY' : s.greenhouseOn ? `GROWTH ${Math.min(100,Math.round(s.cropProgress*100))}%` : 'GROWTH PAUSED',
     hint: s => s.cropReady ? `Crops are mature. Harvest +${DIFFICULTY_PROFILES[s.difficulty]?.cropYield||8} rations; grow-light and irrigation draw are paused until the next crop cycle.` : s.greenhouseOn ? `Crop growth continues. Current crop cycle is ${(s.crewAssignments||[]).some((j,i)=>j==='greenhouse'&&!s.crewPaused?.[i])?48:72} hours; keep water and power available.` : 'Start the greenhouse before food reserves become critical.',
     actions: s => [
-      !s.greenhouseOn && action('greenhouse-on','Start greenhouse',`Consumes power and water; crops mature after ${(s.crewAssignments||[]).some((j,i)=>j==='greenhouse'&&!s.crewPaused?.[i])?48:72} hours with current crew tasking.`,`START GROWTH`,'power','power-on'),
+      !s.greenhouseOn && action('greenhouse-on','Start greenhouse',`Consumes power and water; crops mature after ${(s.crewAssignments||[]).some((j,i)=>j==='greenhouse'&&!s.crewPaused?.[i])?48:72} hours with current crew tasking.`,`START GROWTH`,'power','power-on',s.power<3?'Battery reserve must be at least 3 kWh to start the greenhouse.':''),
       s.greenhouseOn && action('greenhouse-off','Pause greenhouse','Save energy and water. Crop growth pauses.','PAUSE GROWTH','standard','power-off'),
       s.cropReady && action('harvest','Harvest mature crops',`Collect ${DIFFICULTY_PROFILES[s.difficulty]?.cropYield||8} food rations from the greenhouse.`,`HARVEST · +${DIFFICULTY_PROFILES[s.difficulty]?.cropYield||8} FOOD`,'power','harvest'),
       !s.rationing && action('ration','Activate crew rationing','Reduce food use by 25% for the next 24 hours.','ENABLE RATIONING','standard','click'),
       s.rationing && action('ration-off','End rationing','Return to normal food use.','END RATIONING','standard','click')
-    ].filter(Boolean).slice(0,5)
+    ].filter(Boolean)
   },
   crew: {
     kicker: 'ROOM 06 / CREW WELFARE', title: 'Crew Quarters',
@@ -69,23 +69,33 @@ const rooms = {
     hint: s => Math.min(...s.crewHealth) < 90 ? 'Use medical supplies if needed. Fix the underlying survival problem first.' : 'Crew health is stable. Do not waste the storm preparation window.',
     actions: s => [
       action('rest','Schedule crew rest','Advance 2 hours; recover fatigue and a little health.','REST · 2 HOURS','standard','rest'),
-      Math.min(...s.crewHealth) < 100 && s.materials > 0 && action('medical','Medical check','Use 1 material to restore 12% crew health.','MEDICAL · 1 MAT','power','scan'),
-      !s.stormPrep && !s.storm.active && !s.storm.passed && s.storm.eta < 12 && action('storm-prep','Secure exterior equipment','Crew preparation reduces storm damage.','PREPARE OUTPOST','risk','mechanical'),
+      Math.min(...s.crewHealth) < 100 && action('medical','Medical check','Use 1 material to restore 12% crew health.','MEDICAL · 1 MAT','power','scan',s.materials < 1?'No medical material available. Collect regolith with the rover first.':'' ),
+      !s.stormPrep && !s.storm.passed && (s.storm.eta < 12 || s.storm.active) && action('storm-prep','Secure exterior equipment',s.storm.active?'The dust front has already started; initial preparation window has passed.':'Crew preparation reduces storm damage.','PREPARE OUTPOST','risk','mechanical',s.storm.active?'TOO LATE TO PREVENT INITIAL IMPACT · Focus on the shield and power reserve.':'' ),
       !s.radiationShelter && !s.radiation.passed && s.radiation.eta <= 24 && action('radiation-shelter','Secure radiation shelter','Move all crew inside before the separate solar particle event.','SHELTER CREW','risk','mechanical'),
-      s.radiationShelter && (!s.radiation.active || s.radiation.passed) && action('radiation-shelter-off','Release crew from shelter','The solar particle event has passed.','RELEASE CREW','standard','click'),
+      s.radiationShelter && action('radiation-shelter-off','Release crew from shelter',s.radiation.active?'Keep the crew inside until the solar-particle event has passed.':'The solar particle event has passed.','RELEASE CREW','standard','click',s.radiation.active?'LOCKED DURING ACTIVE SOLAR-PARTICLE EVENT · Wait for the event to pass.':''),
       s.rationing && action('ration-off','End rationing','Return food consumption to normal.','END RATIONING','standard','click')
-    ].filter(Boolean).slice(0,5)
+    ].filter(Boolean)
   },
   rover: {
     kicker: 'ROOM 02 / SURFACE EXPLORATION', title: 'Rover Bay',
     description: 'Explore nearby terrain for materials and science samples. Do not launch near a storm.',
     status: s => s.roverOut ? `SURVEY IN PROGRESS · ${Math.ceil(s.roverMission)}H` : s.roverReady ? 'ROVER DOCKED' : 'ROVER UNAVAILABLE',
     hint: s => s.radiation.active || s.radiationShelter || (!s.radiation.passed && s.radiation.eta <= 2) ? 'Solar-radiation safety window: keep the crew sheltered and postpone surface operations.' : s.storm.active || (!s.storm.passed && s.storm.eta < 8) ? 'Surface-dust conditions are unsafe. Keep the rover docked.' : (s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i]) ? 'Rover specialist reduces a survey to 5 kWh / 2h and regolith collection to 2.5 kWh / 1.5h.' : 'A rover survey costs 6 kWh and returns 2 materials plus 1 sample after 3h.',
-    actions: s => [
-      !s.roverOut && s.roverReady && !s.radiation.active && !s.radiationShelter && (s.radiation.passed || s.radiation.eta > 2) && action('rover-launch','Launch rover survey',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'Costs 5 kWh. Rover specialist completes a 2-hour survey and returns 2 materials plus a sample.':'Costs 6 kWh. Automated 3-hour survey returns 2 materials and a sample.',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'LAUNCH ROVER · 5 KWH':'LAUNCH ROVER · 6 KWH','risk','rover-launch'),
-      s.roverOut && action('rover-recall','Recall rover immediately','Cancel the survey and return without its sample.','RECALL ROVER','risk','rover-return'),
-      !s.roverOut && s.roverReady && !s.radiation.active && !s.radiationShelter && (s.radiation.passed || s.radiation.eta > 2) && action('collect-materials','Collect nearby regolith',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'Costs 2.5 kWh and 1.5 hours. Gain 2 materials.':'Costs 3 kWh and 2 hours. Gain 2 materials.',(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i])?'COLLECT · 2.5 KWH / 1.5H':'COLLECT · 3 KWH / 2H','standard','rover-launch')
-    ].filter(Boolean).slice(0,5)
+    actions: s => {
+      const roverSpecialist=(s.crewAssignments||[]).some((j,i)=>j==='rover'&&!s.crewPaused?.[i]);
+      const launchCost=roverSpecialist?5:6, collectionCost=roverSpecialist?2.5:3;
+      const safetyBlock=s.storm.active||(!s.storm.passed&&s.storm.eta<8)
+        ? 'SURFACE DUST HAZARD · Wait until the dust front clears before sending the rover outside.'
+        : s.radiation.active||s.radiationShelter||(!s.radiation.passed&&s.radiation.eta<=2)
+          ? 'SOLAR-RADIATION SAFETY WINDOW · Keep crew sheltered and postpone surface operations.' : '';
+      const roverUnavailable=!s.roverReady&&!s.roverOut?'Rover is not ready to launch. Wait for the vehicle to return to the bay.':'';
+      return [
+        s.roverOut && action('rover-recall','Recall rover immediately','Cancel the survey and return without its sample.','RECALL ROVER','risk','rover-return'),
+        !s.roverOut && action('rover-launch','Launch rover survey',roverSpecialist?'Costs 5 kWh. Rover specialist completes a 2-hour survey and returns 2 materials plus a sample.':'Costs 6 kWh. Automated 3-hour survey returns 2 materials and a sample.',roverSpecialist?'LAUNCH ROVER · 5 KWH':'LAUNCH ROVER · 6 KWH','risk','rover-launch',safetyBlock||roverUnavailable||(s.power<launchCost?`Insufficient power. This survey needs ${launchCost} kWh; current reserve is ${s.power.toFixed(1)} kWh.`:'')),
+        !s.roverOut && action('collect-materials','Collect nearby regolith',roverSpecialist?'Costs 2.5 kWh and 1.5 hours. Gain 2 materials.':'Costs 3 kWh and 2 hours. Gain 2 materials.',roverSpecialist?'COLLECT · 2.5 KWH / 1.5H':'COLLECT · 3 KWH / 2H','standard','rover-launch',safetyBlock||roverUnavailable||(s.power<collectionCost?`Insufficient power. Collection needs ${collectionCost} kWh; current reserve is ${s.power.toFixed(1)} kWh.`:''))
+      ].filter(Boolean);
+    }
+
   },
   research: {
     kicker: 'ROOM 07 / SCIENCE & DISCOVERY', title: 'Research Lab',
@@ -93,9 +103,9 @@ const rooms = {
     status: s => `${s.samples} SAMPLE${s.samples===1?'':'S'} · ${s.researchBonus?'MODEL ENHANCED':'BASELINE MODEL'}`,
     hint: s => s.samples > 0 ? 'Analyze a sample to improve the forecast and record a finding.' : 'Launch a safe rover survey to collect a lunar sample.',
     actions: s => [
-      s.samples > 0 && action('analyze-sample','Analyze lunar sample',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'Costs 1.5 kWh and 1 hour with the research specialist.':'Costs 2 kWh and 1 hour. Improves forecast confidence.',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'ANALYZE · 1.5 KWH':'ANALYZE · 2 KWH','power','scan'),
-      action('run-forecast','Run enhanced weather analysis',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'Costs 0.5 kWh and 30 minutes with the research specialist. Adds an early T−36h warning.':'Costs 1 kWh and 30 minutes. Adds an early T−36h warning.',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'UPDATE FORECAST · 0.5 KWH':'UPDATE FORECAST · 1 KWH','standard','scan')
-    ].filter(Boolean).slice(0,5)
+      action('analyze-sample','Analyze lunar sample',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'Costs 1.5 kWh and 1 hour with the research specialist.':'Costs 2 kWh and 1 hour. Improves forecast confidence.',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'ANALYZE · 1.5 KWH':'ANALYZE · 2 KWH','power','scan',s.samples<1?'No research sample available. Complete a safe rover survey first.':s.power<((s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?1.5:2)?'Insufficient battery reserve to analyze this sample.':''),
+      action('run-forecast','Run enhanced weather analysis',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'Costs 0.5 kWh and 30 minutes with the research specialist. Adds an early T−36h warning.':'Costs 1 kWh and 30 minutes. Adds an early T−36h warning.',(s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?'UPDATE FORECAST · 0.5 KWH':'UPDATE FORECAST · 1 KWH','standard','scan',s.power<((s.crewAssignments||[]).some((j,i)=>j==='research'&&!s.crewPaused?.[i])?0.5:1)?'Insufficient battery reserve to run the enhanced forecast.':'' )
+    ].filter(Boolean)
   },
   weather: {
     kicker: 'MISSION INTELLIGENCE / WEATHER', title: 'Storm Forecast',
@@ -104,11 +114,12 @@ const rooms = {
     hint: s => s.radiation.active ? (s.radiationShelter ? 'SOLAR RADIATION LIVE: crew shelter is secured. Keep the crew inside until the event passes.' : 'SOLAR RADIATION LIVE: shelter the crew inside immediately; the equipment shield is not crew protection.') : s.storm.active ? `${s.destination==='mars'?'MARTIAN DUST FRONT':'LUNAR DUST EVENT'} LIVE: ${Math.max(0, Math.ceil(s.storm.duration - s.storm.elapsed))}h remain. Solar input is down about ${Math.round((1-s.storm.solarFactor)*100)}%; conserve battery.` : !s.radiation.passed && s.radiation.eta <= (DIFFICULTY_PROFILES[s.difficulty]?.warningHours||24) && !s.radiationShelter ? 'Solar particle event approaching: secure the crew shelter. This is separate from the surface-dust hazard.' : !s.storm.passed && s.storm.eta <= 12 ? 'Prepare the equipment shield, recall the rover, and pause optional loads.' : s.storm.passed ? `All surface-dust events passed: ${s.panelDust.toFixed(0)}% panel dust and ${s.panelHealth.toFixed(0)}% panel health. Clean/repair the array; keep tracking any remaining radiation warning.` : 'Track the dust-front and solar-particle timelines separately.',
     actions: s => [
       !s.shieldInspected && action('inspect-shield','Inspect storm shield','Run diagnostics before the front arrives.','INSPECT SHIELD','standard','scan'),
-      s.shieldInspected && !s.shieldActive && !s.storm.passed && action('activate-shield','Arm storm shield',`0.03 kWh/hour standby; 0.32 kWh/hour during this ${s.storm.duration}h front. Arm by T−1h and preserve enough power for essential systems.`,'ARM SHIELD','risk','shield'),
-      s.shieldActive && !s.storm.active && !s.storm.passed && action('deactivate-shield','Disarm storm shield','Save standby power before impact; re-arm at T−1h.','DISARM SHIELD','standard','shield'),
-      !s.stormPrep && !s.storm.active && !s.storm.passed && s.storm.eta < 12 && action('storm-prep','Secure exterior equipment','Reduces expected panel damage.','PREPARE OUTPOST','risk','mechanical'),
-      !s.radiationShelter && !s.radiation.passed && s.radiation.eta <= 24 && action('radiation-shelter','Shelter the crew','A separate solar particle event is approaching.','SECURE CREW SHELTER','risk','mechanical')
-    ].filter(Boolean).slice(0,5)
+      s.shieldInspected && !s.shieldActive && !s.storm.passed && action('activate-shield','Arm storm shield',`0.03 kWh/hour standby; 0.32 kWh/hour during this ${s.storm.duration}h front. Arm by T−1h and preserve enough power for essential systems.`,'ARM SHIELD','risk','shield',s.power<2?'Battery reserve is below the 2 kWh activation requirement.':'' ),
+      s.shieldActive && action('deactivate-shield','Disarm storm shield',s.storm.active?'The shield is locked during an active dust front.':'Save standby power when no dust front is active.','DISARM SHIELD','standard','shield',s.storm.active?'LOCKED DURING ACTIVE DUST FRONT · Keep the shield raised until the event clears.':''),
+      !s.stormPrep && !s.storm.passed && (s.storm.eta < 12 || s.storm.active) && action('storm-prep','Secure exterior equipment',s.storm.active?'The dust front has already started; initial preparation window has passed.':'Reduces expected panel damage.','PREPARE OUTPOST','risk','mechanical',s.storm.active?'TOO LATE TO PREVENT INITIAL IMPACT · Manage shield and power reserve.':''),
+      !s.radiationShelter && !s.radiation.passed && s.radiation.eta <= 24 && action('radiation-shelter','Shelter the crew','A separate solar particle event is approaching.','SECURE CREW SHELTER','risk','mechanical'),
+      s.radiationShelter && action('radiation-shelter-off','Release crew from radiation shelter',s.radiation.active?'Keep crew inside until the solar-particle event has passed.':'The solar-particle event has passed.','RELEASE CREW','standard','click',s.radiation.active?'LOCKED DURING ACTIVE SOLAR-PARTICLE EVENT · Wait until the event passes.':'')
+    ].filter(Boolean)
   },
   objectives: {
     kicker: 'MISSION CONTROL / OBJECTIVES', title: 'Mission Objectives',
@@ -120,10 +131,10 @@ const rooms = {
       !s.oxygenGenerator && action('oxygen-on','Start oxygen generator','Keep the crew breathing.','START O₂ GENERATOR','power','power-on'),
       !s.recyclerOn && action('recycler-on','Start water recycler','Slow the daily loss of water.','START RECYCLER','power','power-on'),
       !s.shieldInspected && action('inspect-shield','Inspect storm shield','Understand shield condition and energy draw.','INSPECT SHIELD','standard','scan')
-    ].filter(Boolean).slice(0,5)
+    ].filter(Boolean)
   }
 };
-function action(id,title,description,label,kind,effect){return{id,title,description,label,kind,effect};}
+function action(id,title,description,label,kind,effect,disabledReason=''){return{id,title,description,label,kind,effect,disabled:Boolean(disabledReason),disabledReason};}
 
 function toast(message, type = 'info') {
   const node = $('#toast'); node.textContent = message; node.className = `toast toast-${type} show`;
@@ -162,6 +173,8 @@ function updateState(state) {
   const fmt=n=>Math.max(0,Number(n)).toFixed(1);
   const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
   const meter=(id,value)=>{const el=document.getElementById(id);if(el)el.style.width=`${Math.max(0,Math.min(100,value))}%`;};
+  document.querySelectorAll('[data-advance]').forEach(button=>{button.disabled=Boolean(state.ended);button.title=state.ended?'Mission has ended. Restart to advance time.':'Advance the mission clock';});
+  const endMissionButton=$('#end-mission-button');if(endMissionButton)endMissionButton.disabled=Boolean(state.ended);
   const elapsed=Number.isFinite(state.missionElapsed)?state.missionElapsed:Math.max(0,state.hours-6);
   const dayHours=getMissionDayHours(state.destination);
   const sol=Math.floor(state.hours/dayHours)+1,hour=Math.floor(state.hours%dayHours);
@@ -247,10 +260,14 @@ function renderRoom(state=game.getState()) {
   for(const item of actions){
     const card=document.createElement('article');card.className=`action-card action-${item.kind}`;
     const icon=document.createElement('span');icon.className='action-card-icon';icon.textContent=item.kind==='risk'?'⚠':item.kind==='power'?'ϟ':item.id.includes('scan')?'⌖':'◇';
-    const copy=document.createElement('div');copy.className='action-copy';const title=document.createElement('b');title.textContent=item.title;const desc=document.createElement('small');desc.textContent=item.description;copy.append(title,desc);
-    const button=document.createElement('button');button.className='action-run';button.textContent=item.label;
+    const blockedReason=state.ended?'MISSION ENDED · Restart or return to the menu to begin another mission.':item.disabledReason;
+    if(blockedReason)card.classList.add('action-disabled');
+    const copy=document.createElement('div');copy.className='action-copy';const title=document.createElement('b');title.textContent=item.title;const desc=document.createElement('small');desc.textContent=blockedReason||item.description;copy.append(title,desc);
+    const button=document.createElement('button');button.className='action-run';button.textContent=state.ended?'MISSION ENDED':item.disabled?'UNAVAILABLE':item.label;button.disabled=Boolean(state.ended||item.disabled);button.title=blockedReason||item.description;button.setAttribute('aria-disabled',String(button.disabled));
     button.addEventListener('click',()=>{
-      if(game.getState().ended){toast('Mission has ended. Restart to play again.','warning');return;}
+      const liveState=game.getState();
+      if(liveState.ended){toast('Mission has ended. Restart to play again.','warning');return;}
+      if(item.disabled){toast(item.disabledReason||'This action is currently unavailable.','warning');return;}
       $('#stage-action-flash').classList.remove('flash');void $('#stage-action-flash').offsetWidth;$('#stage-action-flash').classList.add('flash');
       game.perform(item.id);audio.play(item.effect||'click');
       const details={
@@ -295,8 +312,8 @@ function renderRoom(state=game.getState()) {
       const who=document.createElement('div');who.className='crew-assignment-who';who.innerHTML=`<b>${names[i]}</b><small>${state.crewPaused?.[i]?'JOB PAUSED':'ASSIGNED · '+(state.crewAssignments?.[i]||jobs[i+1][0]).toUpperCase()}</small>`;
       const select=document.createElement('select');select.setAttribute('aria-label',`Assign ${names[i]}`);select.className='crew-job-select';
       for(const [value,label] of jobs){const option=document.createElement('option');option.value=value;option.textContent=label;option.selected=value===(state.crewAssignments?.[i]||['engineering','water','greenhouse','research'][i]);select.append(option);}
-      select.addEventListener('change',()=>{if(!game.assignCrew(i,select.value))renderRoom(game.getState());});
-      const pause=document.createElement('button');pause.className='crew-job-pause';pause.textContent=state.crewPaused?.[i]?'RESUME':'PAUSE';pause.title=state.crewPaused?.[i]?'Resume this crew member’s job':'Pause job and free this crew member for reassignment';
+      select.disabled=Boolean(state.ended);select.title=state.ended?'Mission ended. Crew assignments are locked.':'Assign this crew member to a station.';select.addEventListener('change',()=>{if(!game.assignCrew(i,select.value))renderRoom(game.getState());});
+      const pause=document.createElement('button');pause.className='crew-job-pause';pause.textContent=state.crewPaused?.[i]?'RESUME':'PAUSE';pause.title=state.ended?'Mission ended. Crew tasking is locked.':state.crewPaused?.[i]?'Resume this crew member’s job':'Pause job and free this crew member for reassignment';pause.disabled=Boolean(state.ended);
       pause.addEventListener('click',()=>game.toggleCrewPause(i));
       row.append(who,select,pause);assignments.append(row);
     }
@@ -537,6 +554,16 @@ $('#save-button').addEventListener('click',saveMission);$('#load-button').addEve
 $('#modal-close').addEventListener('click',()=>$('#modal-backdrop').classList.add('hidden'));
 $('#modal-backdrop').addEventListener('click',e=>{if(e.target.id==='modal-backdrop')$('#modal-backdrop').classList.add('hidden');});
 $('#scene-inspect').addEventListener('click',()=>showModal('scene'));
+const clearScreenButton=$('#clear-screen-toggle');
+function setClearScreenMode(enabled){
+  $('#game-shell').classList.toggle('clear-screen-mode',enabled);
+  clearScreenButton.textContent=enabled?'↙ EXIT CLEAR':'⛶ CLEAR SCREEN';
+  clearScreenButton.title=enabled?'Restore the full mission interface':'Hide interface panels for an unobstructed planetary view';
+  clearScreenButton.setAttribute('aria-pressed',String(enabled));
+  $('#inspect-menu').classList.add('hidden');$('#inspect-toggle').classList.remove('selected');
+  $('#control-rail').classList.remove('rail-open');
+}
+clearScreenButton?.addEventListener('click',()=>setClearScreenMode(!$('#game-shell').classList.contains('clear-screen-mode')));
 const skyLabelButton=$('#sky-label-toggle');
 skyLabelButton?.addEventListener('click',()=>{const visible=scene.toggleSkyLabels();skyLabelButton.textContent=`SKY LABELS: ${visible?'ON':'OFF'}`;skyLabelButton.setAttribute('aria-pressed',String(visible));});
 const walkButton=$('#walk-toggle'),walkPad=$('#walk-pad');
@@ -568,8 +595,13 @@ $('#sky-zoom-out')?.addEventListener('click',()=>{
 $('#sky-reset-view')?.addEventListener('click',()=>{scene.resetSkyView();syncWalkControls();toast('Returned to the outpost camera.','info');});
 $('#mobile-ops').addEventListener('click',()=>$('#control-rail').classList.toggle('rail-open'));
 window.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){$('#modal-backdrop').classList.add('hidden');$('#event-overlay').classList.add('hidden');$('#inspect-menu').classList.add('hidden');$('#control-rail').classList.remove('rail-open');}
-  if(e.key.toLowerCase()==='l'&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){const visible=scene.toggleSkyLabels();if(skyLabelButton){skyLabelButton.textContent=`SKY LABELS: ${visible?'ON':'OFF'}`;skyLabelButton.setAttribute('aria-pressed',String(visible));}}
+  const typing=['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName);
+  if(e.key==='Escape'){
+    $('#modal-backdrop').classList.add('hidden');$('#event-overlay').classList.add('hidden');$('#inspect-menu').classList.add('hidden');$('#control-rail').classList.remove('rail-open');
+    if($('#game-shell').classList.contains('clear-screen-mode'))setClearScreenMode(false);
+  }
+  if(!typing&&e.key.toLowerCase()==='c')setClearScreenMode(!$('#game-shell').classList.contains('clear-screen-mode'));
+  if(e.key.toLowerCase()==='l'&&!typing){const visible=scene.toggleSkyLabels();if(skyLabelButton){skyLabelButton.textContent=`SKY LABELS: ${visible?'ON':'OFF'}`;skyLabelButton.setAttribute('aria-pressed',String(visible));}}
   if(e.key==='1')selectRoom('engineering');if(e.key==='2')selectRoom('life-support');if(e.key==='3')selectRoom('greenhouse');
   if(e.key==='4')selectRoom('crew');if(e.key==='5')selectRoom('rover');if(e.key==='6')selectRoom('research');
   if(e.code==='Space'&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();game.advance(1);}

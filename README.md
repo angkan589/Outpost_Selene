@@ -1,4 +1,4 @@
-# OUTPOST SELENE v3.2 — Junior Astronaut Mission Trainer
+# OUTPOST SELENE v3.3 — Junior Astronaut Mission Trainer
 
 An educational, fixed-viewport outpost-management game built with Vite, JavaScript and Three.js. Players operate a four-person outpost on the Moon or Mars, balance power and life support, grow food, assign crew, respond to surface hazards and complete a mission.
 
@@ -95,3 +95,16 @@ npm run build
 ```
 
 `npm test` runs deterministic unit tests. `npm run test:sim` runs full-mission strategy simulations across both destinations, all three difficulty levels, 7/14/30-day durations and multiple seeded hazard schedules. Passing simulations verify that a competent player strategy can complete each configuration; they do not mean every unassisted player will win.
+
+
+## v3.3 action stability and viewing controls
+
+- Removed the five-action display cap from every room so valid controls are never silently truncated.
+- Shield disarm remains visible while the shield is raised; it is disabled with an explicit reason during an active dust front and becomes available after the front clears.
+- Radiation shelter release remains visible while the crew is sheltered; it is disabled until the solar-particle event has passed.
+- Rover launch and regolith collection remain visible during unsafe surface windows or low battery, with a clear disabled reason instead of disappearing.
+- Maintenance, medical, greenhouse and research actions explain resource prerequisites and disable safely when those prerequisites are not met.
+- Ended missions show disabled action cards instead of controls that appear clickable but do nothing.
+- Added Clear Screen mode (button or C key), with Escape restoring the full interface.
+- Added a persistent upper-right INSPECT button that opens live environment, system and sky inspection.
+- Added regression tests for action-list truncation, shield/shelter locks, reversible equipment controls and clear-screen/inspection wiring.

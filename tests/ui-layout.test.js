@@ -38,3 +38,32 @@ test('right rail and power plan are no longer clipped by fixed heights', () => {
 test('informational toast is repositioned away from the bottom mission HUD', () => {
   assert.match(css, /\.toast\{top:calc\(var\(--top\) \+ 128px\);right:344px;bottom:auto/);
 });
+
+test('room action lists never silently truncate controls at five items', () => {
+  assert.doesNotMatch(main, /slice\(0\s*,\s*5\)/);
+  assert.match(main, /\.filter\(Boolean\)/);
+});
+
+test('shield and shelter controls remain visible while temporarily locked', () => {
+  assert.match(main, /s\.shieldActive\s*&&\s*action\('deactivate-shield'/);
+  assert.match(main, /LOCKED DURING ACTIVE DUST FRONT/);
+  assert.match(main, /s\.radiationShelter\s*&&\s*action\('radiation-shelter-off'/);
+  assert.match(main, /LOCKED DURING ACTIVE SOLAR-PARTICLE EVENT/);
+  assert.match(main, /button\.disabled=Boolean\(state\.ended\|\|item\.disabled\)/);
+});
+
+test('clear-screen mode and permanent upper-right inspection control are wired', () => {
+  assert.match(html, /id="clear-screen-toggle"/);
+  assert.match(html, /id="scene-inspect"/);
+  assert.match(main, /setClearScreenMode\(!\$\('#game-shell'\)\.classList\.contains\('clear-screen-mode'\)\)/);
+  assert.match(main, /\$\('#scene-inspect'\)\.addEventListener\('click',\(\)=>showModal\('scene'\)\)/);
+  assert.match(css, /\.clear-screen-mode \.game-layout\{height:100dvh;grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css, /\.stage-clear\{right:132px\}/);
+  assert.match(css, /\.stage-expand\{right:16px\}/);
+});
+
+test('mission-ended state disables time advancement and crew tasking controls', () => {
+  assert.match(main, /button\.disabled=Boolean\(state\.ended\)/);
+  assert.match(main, /select\.disabled=Boolean\(state\.ended\)/);
+  assert.match(main, /pause\.disabled=Boolean\(state\.ended\)/);
+});
