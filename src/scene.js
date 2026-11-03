@@ -478,8 +478,8 @@ export function createLunarScene(canvas) {
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     if (!walkMode) {
-      targetCameraFov = adjustSceneZoom(targetCameraFov, e.deltaY * .035, 30, 48);
-      orbitState.targetRadius = adjustSceneZoom(orbitState.targetRadius, e.deltaY * .006, 14, 24);
+      // Wheel zoom uses orbit distance only, keeping the original perspective.
+      orbitState.targetRadius = adjustSceneZoom(orbitState.targetRadius, e.deltaY * .012, 14, 24);
     }
   }, { passive: false });
   canvas.addEventListener('dblclick', () => { if (walkMode) setWalkMode(false); else resetSkyView(); });
@@ -517,6 +517,8 @@ export function createLunarScene(canvas) {
     walkPosition.z = clamp(walkPosition.z, -43, 43);
     walkPosition.y = surfaceY(walkPosition.x, walkPosition.z) + 1.65;
   }
+  let skyTrackingBlend = 0;
+
   function clearSkyFocus() {
     focusedSkyBody = null; skyTrackRing.visible = false;
     for (const [name, group] of Object.entries(skyBodyGroups)) {
@@ -796,7 +798,36 @@ export function createLunarScene(canvas) {
       camera.position.x = THREE.MathUtils.damp(camera.position.x, orbitTargetPos.x + wobbleX, 4.5, dt);
       camera.position.y = THREE.MathUtils.damp(camera.position.y, orbitTargetPos.y + wobbleY, 4.5, dt);
       camera.position.z = THREE.MathUtils.damp(camera.position.z, orbitTargetPos.z, 4.5, dt);
-      const look = cameraTarget.clone(); look.x += Math.sin(t * .14) * .035; camera.lookAt(look);
+      const look = cameraTarget.clone();
+      look.x += Math.sin(t * .14) * .035;
+
+      // Smoothly follow the selected celestial body without moving
+      // the camera away from the outpost or changing its distance.
+      const trackedGroup = focusedSkyBody ? skyBodyGroups[focusedSkyBody] : null;
+      const trackingVisible = !!trackedGroup?.visible;
+      skyTrackingBlend = THREE.MathUtils.damp(
+        skyTrackingBlend, trackingVisible ? .62 : 0, 4.5, dt
+      );
+
+      if (trackedGroup && skyTrackingBlend > .001) {
+        const baseDirection = look.clone().sub(camera.position).normalize();
+        const bodyDirection = trackedGroup.position.clone()
+          .sub(camera.position).normalize();
+        const trackingDirection = baseDirection.clone()
+          .lerp(bodyDirection, skyTrackingBlend);
+
+        if (trackingDirection.lengthSq() > 1e-6) {
+          trackingDirection.normalize();
+          const lookDistance = Math.max(camera.position.distanceTo(look), 1);
+          camera.lookAt(
+            camera.position.clone().addScaledVector(trackingDirection, lookDistance)
+          );
+        } else {
+          camera.lookAt(look);
+        }
+      } else {
+        camera.lookAt(look);
+      }
     }
     if (focusedSkyBody && skyBodyGroups[focusedSkyBody]?.visible) {
       skyTrackRing.visible = true;
@@ -813,12 +844,14 @@ export function createLunarScene(canvas) {
     applySkyMarkerScale(name, body, true);
     return true;
   }
-  function zoomSkyBody(delta, name = 'sun') {
+  function zoomSkyBody(delta) {
     if (walkMode) setWalkMode(false);
-    const body = latestSky?.bodies?.[name];
-    if (body?.visible) focusSkyBody(name);
-    targetCameraFov = adjustSceneZoom(targetCameraFov, delta * 2.4, 30, 48);
-    orbitState.targetRadius = adjustSceneZoom(orbitState.targetRadius, delta * .35, 14, 24);
+
+    // Zoom the complete surface and sky together; preserve camera FOV.
+    // Button input -1.5 = zoom in; +1.5 = zoom out.
+    orbitState.targetRadius = adjustSceneZoom(
+      orbitState.targetRadius, delta * .9, 14, 24
+    );
     return true;
   }
   animate();

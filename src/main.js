@@ -590,7 +590,7 @@ $('#sky-center-button')?.addEventListener('click',()=>{
     return;
   }
   scene.focusSkyBody(name);
-  toast(`Tracking ${name.toUpperCase()} in the local sky. The surface camera stays in place; use ZOOM + / − to change the whole scene view.`, 'success');
+  toast(`Tracking ${name.toUpperCase()}: the camera gently follows its movement while keeping the outpost in view.`, 'success');
 });
 $('#sky-zoom-in')?.addEventListener('click',()=>{
   const name=$('#sky-target-select')?.value||'sun';
