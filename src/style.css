@@ -244,3 +244,7 @@
   .clear-screen-mode .stage-expand{top:10px;right:8px}
   .clear-screen-mode .stage-clear{top:10px;right:105px}
 }
+
+/* v3.4 — distance readout and globe surface detail */
+.sky-readout span:nth-child(3){color:#8ec9dd;font-size:6.5px}
+.sky-body-row .sky-distance{color:#9bc8dc}

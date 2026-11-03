@@ -49,3 +49,11 @@ v3.3 action stability and screen controls:
 - Mission-ended actions are disabled and labelled rather than appearing active.
 - Added Clear Screen toggle (C shortcut; Escape exits) and persistent upper-right INSPECT button.
 - Added action stability and reversible-control regression tests.
+
+
+OUTPOST SELENE v3.4
+- Curved spherical Moon/Mars surface; no square terrain boundary.
+- Track Body highlights the selected body without moving the camera to it.
+- Zoom changes the complete scene camera/FOV and preserves the surface context.
+- Apparent-size planet markers, physical distance readouts, procedural planet globes.
+- Automated tests: see tests/scene-math.test.js and tests/ui-layout.test.js.

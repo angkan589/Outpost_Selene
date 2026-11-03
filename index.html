@@ -164,15 +164,16 @@
               <option value="saturn">SATURN</option><option value="uranus">URANUS</option><option value="neptune">NEPTUNE</option>
               <option value="phobos">PHOBOS</option><option value="deimos">DEIMOS</option>
             </select>
-            <button id="sky-center-button" type="button" title="Track and zoom to the selected body">TRACK BODY</button>
-            <button id="sky-zoom-in" type="button" title="Zoom in on the selected body">ZOOM +</button>
-            <button id="sky-zoom-out" type="button" title="Zoom out from the selected body">ZOOM −</button>
+            <button id="sky-center-button" type="button" title="Highlight the selected body while keeping the outpost surface in view">TRACK BODY</button>
+            <button id="sky-zoom-in" type="button" title="Zoom the whole local surface and sky view in">ZOOM +</button>
+            <button id="sky-zoom-out" type="button" title="Zoom the whole local surface and sky view out">ZOOM −</button>
             <button id="sky-reset-view" type="button" title="Return to the outpost camera">RESET VIEW</button>
-            <span>DRAG TO LOOK · SHIFT+DRAG TO PAN · W/A/S/D TO WALK · WHEEL TO ZOOM</span>
+            <span>TRACK BODY HIGHLIGHTS ONLY · ZOOM CHANGES THE WHOLE SCENE · W/A/S/D TO WALK</span>
           </div>
           <div class="sky-readout" id="sky-readout" aria-live="polite">
             <span id="sky-sun-readout">SUN POSITION · SUNRISE · SUNSET</span>
             <span id="sky-position-readout">ABOVE / BELOW HORIZON · SELECT A BODY TO TRACK IT</span>
+            <span id="sky-distance-readout">PHYSICAL DISTANCE · LOCAL SKY POSITIONS NOT TO SCALE</span>
           </div>
           <div class="stage-left-readout">
             <div class="readout-label">OUTPOST TELEMETRY</div>

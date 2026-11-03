@@ -12,12 +12,17 @@ test('sky controls provide tracking zoom and a reset camera action', () => {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(scene, /function zoomSkyBody\(/);
-  assert.match(scene, /cameraTarget\.lerp\(skyTargets\[focusedSkyBody\]/);
+  const focusBlock = scene.match(/function focusSkyBody\([\s\S]*?function zoomSkyBody\(/)?.[0] || '';
+  assert.match(focusBlock, /applySkyMarkerScale/);
+  assert.doesNotMatch(focusBlock, /cameraTarget\.(?:copy|lerp)/, 'tracking must not jump the camera away from the outpost surface');
+  assert.match(scene, /adjustSceneZoom\(orbitState\.targetRadius/);
 });
 
 test('sunrise and sunset have their own readout, separate from horizon visibility', () => {
   assert.match(html, /id="sky-sun-readout"/);
   assert.match(html, /id="sky-position-readout"/);
+  assert.match(html, /id="sky-distance-readout"/);
+  assert.match(main, /formatSkyDistance/);
   assert.match(main, /set\('sky-sun-readout',sunLine\)/);
   assert.match(main, /set\('sky-position-readout'/);
 });

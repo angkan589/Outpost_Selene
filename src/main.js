@@ -1,6 +1,7 @@
 import './style.css';
 import { createGame, getSolarAvailability, getSolarRating, getMissionDayHours, DIFFICULTY_PROFILES } from './game.js';
 import { createLunarScene } from './scene.js'; import { formatSkyInterval } from './astronomy.js';
+import { formatSkyDistance } from './scene-math.js';
 import { createAudio } from './audio.js';
 
 const $ = selector => document.querySelector(selector);
@@ -220,6 +221,9 @@ function updateState(state) {
       const below=sky.below.length?sky.below.map(x=>x.toUpperCase()).join(', '):'NONE';
       set('sky-sun-readout',sunLine);
       set('sky-position-readout',`ABOVE HORIZON: ${above}  ·  BELOW HORIZON: ${below}`);
+      const selectedBodyName=$('#sky-target-select')?.value||'sun';
+      const selectedBody=sky.bodies[selectedBodyName];
+      set('sky-distance-readout',selectedBody?`SELECTED ${selectedBodyName.toUpperCase()} · ${formatSkyDistance(selectedBody)} · VISUAL GLOBE SIZE APPROXIMATED`:'DISTANCES ARE PHYSICAL ESTIMATES · SKY POSITIONS ARE DIRECTIONAL, NOT A DISTANCE-SCALE MAP');
       const bodySelect=$('#sky-target-select');
       if(bodySelect){
         for(const option of bodySelect.options){
@@ -481,8 +485,8 @@ function showModal(type){
   }else if(type==='scene'){
     kicker.textContent='ENVIRONMENT INSPECTION';title.textContent='Outpost telemetry';
     const sky=scene?.getSkyReport();
-    const skyRows=sky?Object.entries(sky.bodies).map(([name,b])=>`<div class="sky-body-row"><b>${name.toUpperCase()}</b><span>${b.visible?'ABOVE HORIZON':'BELOW HORIZON'}</span><small>ALT ${b.altitude.toFixed(1)}° · AZ ${b.azimuth.toFixed(0)}°</small></div>`).join(''):'';
-    addHtml(`<div class="modal-stat-grid">${stat('Solar array',s.panelsActive?'GENERATING':s.panelsDeployed?'DEPLOYED / OFF':'STOWED')}${stat('Shield',s.storm.active?(s.shieldActive?'ACTIVE':'OFF'):s.shieldActive&&!s.storm.passed?'ARMED · STANDBY':'STANDBY')}${stat('Oxygen generator',s.oxygenGenerator?'ONLINE':'OFFLINE')}${stat('Greenhouse',s.cropReady?'HARVEST READY':s.greenhouseOn?`${Math.round(s.cropProgress*100)}% GROWN`:'PAUSED')}${stat('Rover',s.roverOut?'SURVEYING':'DOCKED')}${stat((s.destination==='mars'?'Martian dust front':'Lunar dust event'),s.storm.active?'IMPACT':s.storm.passed?'PASSED':`T−${Math.ceil(s.storm.eta)}H`)}${stat('Solar particles',s.radiation.active?'ACTIVE':s.radiation.passed?'PASSED':`T−${Math.ceil(s.radiation.eta)}H`)}</div><h3 class="sky-modal-heading">LIVE CELESTIAL POSITIONS · ${s.destination==='mars'?'GALE CRATER':'LUNAR SOUTH POLAR RIDGE'}</h3><div class="sky-body-list">${skyRows}</div><p class="modal-copy">Positions use JPL approximate planetary orbital elements and IAU rotation models. Bodies below the local horizon are listed but are not drawn in the visible sky. Marker sizes are enlarged for learning. The scene is an educational approximation, not a live JPL Horizons feed.</p>`);
+    const skyRows=sky?Object.entries(sky.bodies).map(([name,b])=>`<div class="sky-body-row"><b>${name.toUpperCase()}</b><span>${b.visible?'ABOVE HORIZON':'BELOW HORIZON'}</span><small>ALT ${b.altitude.toFixed(1)}° · AZ ${b.azimuth.toFixed(0)}°</small><small class="sky-distance">DISTANCE ${formatSkyDistance(b)}</small></div>`).join(''):'';
+    addHtml(`<div class="modal-stat-grid">${stat('Solar array',s.panelsActive?'GENERATING':s.panelsDeployed?'DEPLOYED / OFF':'STOWED')}${stat('Shield',s.storm.active?(s.shieldActive?'ACTIVE':'OFF'):s.shieldActive&&!s.storm.passed?'ARMED · STANDBY':'STANDBY')}${stat('Oxygen generator',s.oxygenGenerator?'ONLINE':'OFFLINE')}${stat('Greenhouse',s.cropReady?'HARVEST READY':s.greenhouseOn?`${Math.round(s.cropProgress*100)}% GROWN`:'PAUSED')}${stat('Rover',s.roverOut?'SURVEYING':'DOCKED')}${stat((s.destination==='mars'?'Martian dust front':'Lunar dust event'),s.storm.active?'IMPACT':s.storm.passed?'PASSED':`T−${Math.ceil(s.storm.eta)}H`)}${stat('Solar particles',s.radiation.active?'ACTIVE':s.radiation.passed?'PASSED':`T−${Math.ceil(s.radiation.eta)}H`)}</div><h3 class="sky-modal-heading">LIVE CELESTIAL POSITIONS · ${s.destination==='mars'?'GALE CRATER':'LUNAR SOUTH POLAR RIDGE'}</h3><div class="sky-body-list">${skyRows}</div><p class="modal-copy">Positions use JPL approximate planetary orbital elements and IAU rotation models. Distances are physical estimates from the surface site. The 3D sky uses a local direction shell so azimuth and altitude remain readable; it is not a distance-scale solar-system map. Globe sizes follow apparent angular size where practical, with a minimum enlargement for small distant planets. Only the Moon and Mars have walkable surface environments in this mission trainer.</p>`);
     addFooter('Close inspection',close);
   }
   $('#modal-backdrop').classList.remove('hidden');
@@ -564,6 +568,12 @@ function setClearScreenMode(enabled){
   $('#control-rail').classList.remove('rail-open');
 }
 clearScreenButton?.addEventListener('click',()=>setClearScreenMode(!$('#game-shell').classList.contains('clear-screen-mode')));
+$('#sky-target-select')?.addEventListener('change',()=>{
+  const name=$('#sky-target-select')?.value||'sun';
+  const body=scene.getSkyReport()?.bodies?.[name];
+  const node=$('#sky-distance-readout');
+  if(node) node.textContent=body?`SELECTED ${name.toUpperCase()} · ${formatSkyDistance(body)} · VISUAL GLOBE SIZE APPROXIMATED`:'DISTANCES ARE PHYSICAL ESTIMATES · SKY POSITIONS ARE DIRECTIONAL, NOT A DISTANCE-SCALE MAP';
+});
 const skyLabelButton=$('#sky-label-toggle');
 skyLabelButton?.addEventListener('click',()=>{const visible=scene.toggleSkyLabels();skyLabelButton.textContent=`SKY LABELS: ${visible?'ON':'OFF'}`;skyLabelButton.setAttribute('aria-pressed',String(visible));});
 const walkButton=$('#walk-toggle'),walkPad=$('#walk-pad');
@@ -579,12 +589,13 @@ $('#sky-center-button')?.addEventListener('click',()=>{
     toast(`${name.toUpperCase()} is ${altitude}° below the horizon (azimuth ${azimuth}°). Advance mission time until it rises, or select a body above the horizon.`, 'info');
     return;
   }
-  scene.focusSkyBody(name);syncWalkControls();
-  toast(`Tracking ${name.toUpperCase()}. Use ZOOM + / − and advance time to observe its movement.`, 'success');
+  scene.focusSkyBody(name);
+  toast(`Tracking ${name.toUpperCase()} in the local sky. The surface camera stays in place; use ZOOM + / − to change the whole scene view.`, 'success');
 });
 $('#sky-zoom-in')?.addEventListener('click',()=>{
   const name=$('#sky-target-select')?.value||'sun';
-  if(!scene.zoomSkyBody(-1.5,name)) toast(`${name.toUpperCase()} is not currently above the local horizon. Select a visible body first.`, 'info');
+  scene.zoomSkyBody(-1.5,name);
+  toast('Surface and local-sky view zoomed in. The selected planet remains in context.','info');
   syncWalkControls();
 });
 $('#sky-zoom-out')?.addEventListener('click',()=>{

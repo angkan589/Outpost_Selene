@@ -108,3 +108,13 @@ npm run build
 - Added Clear Screen mode (button or C key), with Escape restoring the full interface.
 - Added a persistent upper-right INSPECT button that opens live environment, system and sky inspection.
 - Added regression tests for action-list truncation, shield/shelter locks, reversible equipment controls and clear-screen/inspection wiring.
+
+
+## v3.4 — Curved planetary surface and distance-aware sky
+
+- Replaced the square ground slab with a continuous spherical surface for both Moon and Mars; outpost equipment, crew, rover, loose rocks and horizon features follow the curved terrain.
+- Celestial tracking now highlights a body without teleporting the camera away from the outpost. Zoom changes the complete surface-and-sky view gradually and Reset View restores the normal outpost framing.
+- The Sun and planets use apparent-size scaling from their physical diameters and estimated observer distances; small distant planets receive a clearly disclosed educational enlargement.
+- Added physical distance readouts in km/AU and procedural globe surface detail for the visible planets.
+- The local sky is a directional teaching dome, not a distance-scale solar-system map. Only Moon and Mars remain walkable mission environments.
+- Includes the v3.3 action-stability, clear-screen and inspection fixes.
