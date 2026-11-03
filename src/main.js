@@ -200,12 +200,20 @@ function updateState(state) {
     const sky=scene.getSkyReport();
     if(sky){
       const sun=sky.sunAltitude>=0?'SUN ABOVE HORIZON':'SUN BELOW HORIZON';
-      const rise=sky.sunriseInHours==null?'—':formatSkyInterval(sky.sunriseInHours);
-      const sunset=sky.sunsetInHours==null?'—':formatSkyInterval(sky.sunsetInHours);
-      const above=sky.above.slice(0,4).map(x=>x.toUpperCase()).join(', ');
-      const extra=sky.above.length>4?` +${sky.above.length-4}`:'';
-      const below=sky.below.length?` · BELOW: ${sky.below.slice(0,3).map(x=>x.toUpperCase()).join(', ')}${sky.below.length>3?'…':''}`:'';
-      set('sky-readout',`${sun} ${sky.sunAltitude>=0?'+':''}${sky.sunAltitude.toFixed(1)}° · RISE IN ${rise} · SET IN ${sunset} · ABOVE: ${above||'NONE'}${extra}${below} · PLANET SYMBOLS ENLARGED`);
+      const sunrise=sky.sunriseInHours==null?'not in forecast window':formatSkyInterval(sky.sunriseInHours);
+      const sunset=sky.sunsetInHours==null?'not in forecast window':formatSkyInterval(sky.sunsetInHours);
+      const sunLine=`SUN ${sky.sunAltitude>=0?'ABOVE':'BELOW'} HORIZON · ALT ${sky.sunAltitude>=0?'+':''}${sky.sunAltitude.toFixed(1)}° · SUNRISE IN ${sunrise} · SUNSET IN ${sunset}`;
+      const above=sky.above.length?sky.above.map(x=>x.toUpperCase()).join(', '):'NONE';
+      const below=sky.below.length?sky.below.map(x=>x.toUpperCase()).join(', '):'NONE';
+      set('sky-sun-readout',sunLine);
+      set('sky-position-readout',`ABOVE HORIZON: ${above}  ·  BELOW HORIZON: ${below}`);
+      const bodySelect=$('#sky-target-select');
+      if(bodySelect){
+        for(const option of bodySelect.options){
+          if(option.value==='phobos'||option.value==='deimos') option.disabled=state.destination!=='mars';
+        }
+        if(bodySelect.selectedOptions[0]?.disabled) bodySelect.value='sun';
+      }
     }
   }
   set('site-coordinates',state.destination==='mars'?'4.59°S · 137.44°E · GALE CRATER':'68.2°S · 31.8°E · LUNAR POLAR RIDGE');
@@ -532,9 +540,32 @@ $('#scene-inspect').addEventListener('click',()=>showModal('scene'));
 const skyLabelButton=$('#sky-label-toggle');
 skyLabelButton?.addEventListener('click',()=>{const visible=scene.toggleSkyLabels();skyLabelButton.textContent=`SKY LABELS: ${visible?'ON':'OFF'}`;skyLabelButton.setAttribute('aria-pressed',String(visible));});
 const walkButton=$('#walk-toggle'),walkPad=$('#walk-pad');
-walkButton?.addEventListener('click',()=>{const enabled=scene.toggleWalkMode();walkButton.textContent=enabled?'EXIT WALK':'WALK AROUND';walkButton.setAttribute('aria-pressed',String(enabled));walkPad?.classList.toggle('hidden',!enabled);toast(enabled?'Surface walk enabled. Use WASD or the arrow pad; drag to look.':'Returned to the outpost orbit camera.','info');});
+function syncWalkControls(){const enabled=scene.isWalkMode();if(walkButton){walkButton.textContent=enabled?'EXIT WALK':'WALK AROUND';walkButton.setAttribute('aria-pressed',String(enabled));}walkPad?.classList.toggle('hidden',!enabled);}
+walkButton?.addEventListener('click',()=>{const enabled=scene.toggleWalkMode();syncWalkControls();toast(enabled?'Surface walk enabled. Use WASD or the arrow pad; drag to look.':'Returned to the outpost orbit camera.','info');});
 document.querySelectorAll('[data-walk-move]').forEach(button=>button.addEventListener('click',()=>scene.moveWalk(button.dataset.walkMove)));
-$('#sky-center-button')?.addEventListener('click',()=>{const name=$('#sky-target-select')?.value||'sun';const report=scene.getSkyReport();const body=report?.bodies?.[name];if(!body){toast(`${name.toUpperCase()} is not part of this destination's sky.`, 'info');return;}if(!body.visible){toast(`${name.toUpperCase()} is below the local horizon. Check the sky guide for its current azimuth and altitude.`, 'info');return;}scene.focusSkyBody(name);toast(`Centered ${name.toUpperCase()} in the sky view.`, 'info');});
+$('#sky-center-button')?.addEventListener('click',()=>{
+  const name=$('#sky-target-select')?.value||'sun';
+  const body=scene.getSkyReport()?.bodies?.[name];
+  if(!body){toast(`${name.toUpperCase()} is not part of this destination's sky.`, 'info');return;}
+  if(!body.visible){
+    const altitude=Math.abs(body.altitude).toFixed(1),azimuth=body.azimuth.toFixed(0);
+    toast(`${name.toUpperCase()} is ${altitude}° below the horizon (azimuth ${azimuth}°). Advance mission time until it rises, or select a body above the horizon.`, 'info');
+    return;
+  }
+  scene.focusSkyBody(name);syncWalkControls();
+  toast(`Tracking ${name.toUpperCase()}. Use ZOOM + / − and advance time to observe its movement.`, 'success');
+});
+$('#sky-zoom-in')?.addEventListener('click',()=>{
+  const name=$('#sky-target-select')?.value||'sun';
+  if(!scene.zoomSkyBody(-1.5,name)) toast(`${name.toUpperCase()} is not currently above the local horizon. Select a visible body first.`, 'info');
+  syncWalkControls();
+});
+$('#sky-zoom-out')?.addEventListener('click',()=>{
+  const name=$('#sky-target-select')?.value||'sun';
+  if(!scene.zoomSkyBody(1.5,name)) toast('Select a body above the horizon and choose TRACK BODY first.', 'info');
+  syncWalkControls();
+});
+$('#sky-reset-view')?.addEventListener('click',()=>{scene.resetSkyView();syncWalkControls();toast('Returned to the outpost camera.','info');});
 $('#mobile-ops').addEventListener('click',()=>$('#control-rail').classList.toggle('rail-open'));
 window.addEventListener('keydown',e=>{
   if(e.key==='Escape'){$('#modal-backdrop').classList.add('hidden');$('#event-overlay').classList.add('hidden');$('#inspect-menu').classList.add('hidden');$('#control-rail').classList.remove('rail-open');}

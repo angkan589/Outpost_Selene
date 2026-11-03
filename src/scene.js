@@ -149,7 +149,7 @@ export function createLunarScene(canvas) {
     ctx.fillText(subtitle, 256, 91, 470);
     const texture = new THREE.CanvasTexture(labelCanvas); texture.colorSpace = THREE.SRGBColorSpace;
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
-    const sprite = new THREE.Sprite(material); sprite.scale.set(2.65, .66, 1); sprite.renderOrder = 1000; scene.add(sprite);
+    const sprite = new THREE.Sprite(material); sprite.scale.set(3.8, .92, 1); sprite.renderOrder = 1000; scene.add(sprite);
     return sprite;
   }
   const skyLabels = {
@@ -167,8 +167,13 @@ export function createLunarScene(canvas) {
   };
   const skyBodyGroups = { sun, earth, mercury, venus, mars, jupiter, saturn, uranus, neptune, phobos, deimos };
   const skyTargets = {};
+  const skyBodyScales = {
+    moon: { sun: .82, earth: 1.12, mercury: 1.05, venus: 1.2, mars: 1.2, jupiter: 1.42, saturn: 1.38, uranus: 1.18, neptune: 1.18 },
+    mars: { sun: .82, earth: .72, mercury: 1.0, venus: 1.12, jupiter: 1.35, saturn: 1.3, uranus: 1.12, neptune: 1.12, phobos: 1.15, deimos: 1.1 }
+  };
   const skyLabelOffsets = { sun: 2.1, earth: 1.3, mercury: .8, venus: 1, mars: .95, jupiter: 1.25, saturn: 1.2, uranus: .9, neptune: .9, phobos: .75, deimos: .65 };
   let skyLabelsVisible = true;
+  let focusedSkyBody = null;
   function setSkyLabelsVisible(visible) {
     skyLabelsVisible = Boolean(visible);
     Object.values(skyLabels).forEach(label => { label.visible = skyLabelsVisible && label.userData.aboveHorizon !== false; });
@@ -389,8 +394,12 @@ export function createLunarScene(canvas) {
   });
   const pointerUp = e => { pointerState.down = false; canvas.style.cursor = walkMode ? 'crosshair' : 'grab'; if (e && canvas.releasePointerCapture) { try { canvas.releasePointerCapture(e.pointerId); } catch {} } };
   canvas.addEventListener('pointerup', pointerUp); canvas.addEventListener('pointerleave', pointerUp); canvas.addEventListener('pointercancel', pointerUp);
-  canvas.addEventListener('wheel', e => { e.preventDefault(); if (!walkMode) orbitState.targetRadius = clamp(orbitState.targetRadius + e.deltaY * .015, 5.6, 28); }, { passive: false });
-  canvas.addEventListener('dblclick', () => { if (walkMode) setWalkMode(false); else syncOrbit(roomViews[activeRoom] || roomViews.engineering); });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (!walkMode) orbitState.targetRadius = clamp(orbitState.targetRadius + e.deltaY * .015,
+      focusedSkyBody ? 2.4 : 5.6, focusedSkyBody ? 14 : 28);
+  }, { passive: false });
+  canvas.addEventListener('dblclick', () => { if (walkMode) setWalkMode(false); else resetSkyView(); });
   window.addEventListener('keydown', e => {
     if (!walkMode || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
     const key = e.key.toLowerCase();
@@ -424,16 +433,31 @@ export function createLunarScene(canvas) {
     walkPosition.x = clamp(walkPosition.x, -43, 43);
     walkPosition.z = clamp(walkPosition.z, -43, 43);
   }
+  function clearSkyFocus() {
+    focusedSkyBody = null;
+    const scales = skyBodyScales[activeDestination] || skyBodyScales.moon;
+    for (const [name, group] of Object.entries(skyBodyGroups)) group.scale.setScalar(scales[name] || 1);
+    Object.values(skyLabels).forEach(label => label.scale.set(3.8, .92, 1));
+  }
+  function resetSkyView() {
+    clearSkyFocus();
+    if (walkMode) { walkMode = false; walkKeys.clear(); canvas.style.cursor = 'grab'; }
+    const view = roomViews[activeRoom] || roomViews.engineering;
+    cameraTarget.copy(view.target); cameraPositionTarget.copy(view.position); syncOrbit(view);
+    return true;
+  }
   function setRoom(room) {
     const view = roomViews[room] || roomViews.engineering;
     activeRoom = room;
     if (walkMode) { walkMode = false; walkKeys.clear(); canvas.style.cursor = 'grab'; }
+    clearSkyFocus();
     cameraTarget.copy(view.target); cameraPositionTarget.copy(view.position); syncOrbit(view);
   }
   function setDestination(destination = 'moon') {
     const next = destination === 'mars' ? 'mars' : 'moon';
     if (next === activeDestination) return;
     activeDestination = next;
+    clearSkyFocus();
     scene.background.setHex(next === 'mars' ? 0x2b120f : 0x070d19);
     scene.fog.color.setHex(next === 'mars' ? 0x5b3128 : 0x111522);
     keyLight.color.setHex(next === 'mars' ? 0xffb28b : 0xffe5c3);
@@ -515,9 +539,7 @@ export function createLunarScene(canvas) {
     scene.fog.color.setHex(state.storm.active ? 0x8d604e : state.storm.eta < 12 && !state.storm.passed ? 0x5d4244 : activeDestination === 'mars' ? 0x5b3128 : 0x111522);
     scene.fog.density = state.storm.active ? .022 : activeDestination === 'mars' ? .0105 : .0075; keyLight.intensity = state.storm.active ? 1.15 : (activeDestination === 'mars' ? 2.5 : 3.2);
     baseGlow.intensity = state.power < 5 ? .12 : state.storm.active ? .45 : 1.1;
-    const bodyScale = destination === 'moon'
-      ? { sun: .82, earth: .72, mercury: .24, venus: .34, mars: .34, jupiter: .48, saturn: .44, uranus: .27, neptune: .27 }
-      : { sun: .82, earth: .18, mercury: .22, venus: .3, jupiter: .42, saturn: .4, uranus: .24, neptune: .24, phobos: .34, deimos: .24 };
+    const bodyScale = skyBodyScales[destination] || skyBodyScales.moon;
     for (const [name, group] of Object.entries(skyBodyGroups)) {
       const body = latestSky.bodies[name];
       const label = skyLabels[name];
@@ -532,13 +554,14 @@ export function createLunarScene(canvas) {
         const target = skyWorldPosition(body.azimuth, body.altitude);
         skyTargets[name] = target;
         if (!wasVisible) group.position.copy(target);
-        group.scale.setScalar(bodyScale[name] || 1);
+        group.scale.setScalar((bodyScale[name] || 1) * (focusedSkyBody === name ? 1.4 : 1));
       }
       if (label) {
         label.userData.aboveHorizon = body.visible;
         label.visible = skyLabelsVisible && body.visible;
       }
     }
+    if (focusedSkyBody && !latestSky.bodies[focusedSkyBody]?.visible) resetSkyView();
   }
   function triggerEffect(kind) {
     fxKind = kind; fxTime = 1; fxColor = kind.includes('radiation') ? 0xff8e7c : kind.includes('shield') ? 0x53ddff : kind.includes('storm') ? 0xff986b :
@@ -584,6 +607,9 @@ export function createLunarScene(canvas) {
 
     const destination = latest?.destination || activeDestination || 'moon';
     const sunSky = latestSky?.bodies?.sun;
+    if (focusedSkyBody && skyTargets[focusedSkyBody] && latestSky?.bodies?.[focusedSkyBody]?.visible) {
+      cameraTarget.lerp(skyTargets[focusedSkyBody], 1 - Math.exp(-dt * 3.2));
+    }
     for (const [name, target] of Object.entries(skyTargets)) {
       const body = skyBodyGroups[name];
       if (!body?.visible) continue;
@@ -592,6 +618,8 @@ export function createLunarScene(canvas) {
       if (label) {
         label.position.copy(body.position);
         label.position.y -= skyLabelOffsets[name] || 1;
+        const tracked = focusedSkyBody === name;
+        label.scale.set(tracked ? 1.9 : 3.8, tracked ? .48 : .92, 1);
       }
     }
     if (sunSky && sun.visible) {
@@ -654,17 +682,23 @@ export function createLunarScene(canvas) {
   }
   function focusSkyBody(name = 'sun') {
     const body = latestSky?.bodies?.[name];
-    if (!body || !body.visible) return false;
-    if (walkMode) {
-      walkYaw = body.azimuth * Math.PI / 180;
-      walkPitch = THREE.MathUtils.clamp(body.altitude * Math.PI / 180, -.5, .5);
-    } else {
-      cameraTarget.set(0, 1.5, 0);
-      orbitState.targetYaw = -body.azimuth * Math.PI / 180;
-      orbitState.targetPitch = -THREE.MathUtils.clamp(body.altitude * Math.PI / 180, -.65, .65);
-      orbitState.targetRadius = 18;
-    }
-    return body.visible;
+    if (!body || !body.visible || !skyTargets[name]) return false;
+    if (walkMode) { walkMode = false; walkKeys.clear(); canvas.style.cursor = 'grab'; }
+    focusedSkyBody = name;
+    const target = skyTargets[name].clone();
+    cameraTarget.copy(target);
+    const towardObserver = target.clone().normalize().multiplyScalar(-7.5);
+    orbitState.yaw = orbitState.targetYaw = Math.atan2(towardObserver.x, towardObserver.z);
+    orbitState.pitch = orbitState.targetPitch = Math.atan2(towardObserver.y, Math.hypot(towardObserver.x, towardObserver.z));
+    orbitState.radius = orbitState.targetRadius = 7.5;
+    const scales = skyBodyScales[activeDestination] || skyBodyScales.moon;
+    skyBodyGroups[name].scale.setScalar((scales[name] || 1) * 1.4);
+    return true;
+  }
+  function zoomSkyBody(delta, name = 'sun') {
+    if (!focusedSkyBody && !focusSkyBody(name)) return false;
+    orbitState.targetRadius = clamp(orbitState.targetRadius + delta, 2.4, 14);
+    return true;
   }
   animate();
   return {
@@ -672,7 +706,7 @@ export function createLunarScene(canvas) {
     toggleSkyLabels() { return setSkyLabelsVisible(!skyLabelsVisible); },
     toggleWalkMode() { return setWalkMode(!walkMode); },
     moveWalk, isWalkMode() { return walkMode; },
-    focusSkyBody,
+    focusSkyBody, zoomSkyBody, resetSkyView,
     getSkyReport() { return latestSky; },
     dispose() { resizeObserver.disconnect(); renderer.dispose(); Object.values(skyLabels).forEach(label => { label.material.map?.dispose(); label.material.dispose(); }); }
   };

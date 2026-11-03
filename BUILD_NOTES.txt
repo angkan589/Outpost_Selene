@@ -1,4 +1,4 @@
-OUTPOST SELENE v3.1
+OUTPOST SELENE v3.2
 
 Rebuild focus: interactive onboarding, three meaningful difficulty profiles, Moon/Mars-specific solar, dust and mission-clock models, resource balancing, NASA science provenance, and repeatable mission simulations.
 
@@ -10,7 +10,7 @@ Validation performed in the authoring environment:
 - node --check tests/astronomy.test.js
 - node --check tests/game.test.js
 - node --check scripts/simulate-missions.mjs
-- npm test: 18 tests (12 gameplay + 6 astronomy)
+- npm test: 23 tests (12 gameplay + 6 astronomy + 5 UI layout contracts)
 - npm run test:sim: 54 seeded full-mission simulations (all passed)
 
 A Vite production build could not be run in this environment because npm dependency installation timed out while attempting to reach the package registry. Run npm ci and npm run build on the Mac before publishing.
@@ -30,3 +30,13 @@ v3.1 celestial and surface-navigation upgrade:
 - Moon terrain retains crater features; Mars has distinct red dunes and mesas.
 - Astronomical sky is a JPL/IAU educational approximation, not a live JPL Horizons feed. Moon battery gameplay retains its separate 168-hour training illumination schedule.
 - Validation: 18/18 tests passed; 54/54 seeded full-mission simulations passed. Syntax checks passed. Vite build remains to be confirmed after npm ci on the Mac.
+
+
+v3.2 visual-layout and celestial-camera update:
+- Added Track Body, Zoom +, Zoom − and Reset View controls. Camera locks onto a selected visible planet/moon and follows its updated sky position as mission time advances.
+- Increased educational planet-marker scale; computed azimuth/altitude and above/below-horizon visibility remain authoritative.
+- Split sunrise/sunset/solar-altitude information from the planet horizon list into separate lines.
+- Moved telemetry below the sky readout to eliminate the screenshot's top-left collision.
+- Repositioned informational toasts above the bottom HUD, made the operations rail scroll rather than clip, and removed the power-plan card's fixed-height clipping.
+- Validation in the available environment: 23/23 tests passed; 54/54 full-mission simulations passed; node syntax checks passed.
+- Vite build was not available in this environment because npm dependency installation could not complete; run npm install and npm run build on the Mac before publishing.

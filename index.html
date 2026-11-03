@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#080d18">
   <meta name="description" content="Outpost Selene — a lunar and Martian outpost mission trainer.">
-  <title>OUTPOST SELENE v3.1 | Lunar & Martian Mission Trainer</title>
+  <title>OUTPOST SELENE v3.2 | Lunar & Martian Mission Trainer</title>
 </head>
 
 <body>
@@ -71,7 +71,7 @@
         <div class="launch-disclaimer">EDUCATIONAL SIMULATION · NASA research informs selected science context; resource rates and event schedules are simplified game models, not live forecasts.</div>
       </aside>
     </section>
-    <div class="launch-footer"><span>OUTPOST SELENE / MISSION TRAINER v3.1</span><span>POWER IS TIME. TIME IS
+    <div class="launch-footer"><span>OUTPOST SELENE / MISSION TRAINER v3.2</span><span>POWER IS TIME. TIME IS
         SURVIVAL.</span></div>
     <section id="auth-panel" class="auth-panel hidden" aria-modal="true" role="dialog" aria-labelledby="auth-title">
       <button id="auth-close" class="auth-close" aria-label="Close sign in">×</button>
@@ -164,10 +164,23 @@
               <option value="saturn">SATURN</option><option value="uranus">URANUS</option><option value="neptune">NEPTUNE</option>
               <option value="phobos">PHOBOS</option><option value="deimos">DEIMOS</option>
             </select>
-            <button id="sky-center-button" type="button">CENTER BODY</button>
-            <span>DRAG TO LOOK · WASD / ARROWS TO WALK · SHIFT+DRAG TO PAN</span>
+            <button id="sky-center-button" type="button" title="Track and zoom to the selected body">TRACK BODY</button>
+            <button id="sky-zoom-in" type="button" title="Zoom in on the selected body">ZOOM +</button>
+            <button id="sky-zoom-out" type="button" title="Zoom out from the selected body">ZOOM −</button>
+            <button id="sky-reset-view" type="button" title="Return to the outpost camera">RESET VIEW</button>
+            <span>DRAG TO LOOK · SHIFT+DRAG TO PAN · W/A/S/D TO WALK · WHEEL TO ZOOM</span>
           </div>
-          <div class="sky-readout" id="sky-readout" aria-live="polite">SKY CALCULATING · JPL APPROXIMATE POSITIONS</div>
+          <div class="sky-readout" id="sky-readout" aria-live="polite">
+            <span id="sky-sun-readout">SUN POSITION · SUNRISE · SUNSET</span>
+            <span id="sky-position-readout">ABOVE / BELOW HORIZON · SELECT A BODY TO TRACK IT</span>
+          </div>
+          <div class="stage-left-readout">
+            <div class="readout-label">OUTPOST TELEMETRY</div>
+            <div><span>ARRAY</span><b id="readout-array">STOWED</b></div>
+            <div><span>SHIELD</span><b id="readout-shield">STANDBY</b></div>
+            <div><span>O₂ GEN</span><b id="readout-oxygen">OFFLINE</b></div>
+            <div><span>ROVER</span><b id="readout-rover">DOCKED</b></div>
+          </div>
         </div>
         <div class="stage-top-right">
           <div class="mini-weather" id="mini-weather"><span class="weather-glyph">☼</span>
@@ -176,13 +189,6 @@
           <div class="battery-chip"><span>ϟ</span><b id="stage-power">28.0</b><small>kWh</small></div>
         </div>
         <div class="scene-reticle"><span></span><i></i></div>
-        <div class="stage-left-readout">
-          <div class="readout-label">OUTPOST TELEMETRY</div>
-          <div><span>ARRAY</span><b id="readout-array">STOWED</b></div>
-          <div><span>SHIELD</span><b id="readout-shield">STANDBY</b></div>
-          <div><span>O₂ GEN</span><b id="readout-oxygen">OFFLINE</b></div>
-          <div><span>ROVER</span><b id="readout-rover">DOCKED</b></div>
-        </div>
         <div class="walk-pad hidden" id="walk-pad" aria-label="Surface movement controls">
           <button type="button" data-walk-move="forward" aria-label="Move forward">▲</button>
           <button type="button" data-walk-move="left" aria-label="Move left">◀</button>
