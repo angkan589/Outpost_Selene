@@ -213,10 +213,11 @@ function updateState(state) {
     scene.update(state);
     const sky=scene.getSkyReport();
     if(sky){
-      const sun=sky.sunAltitude>=0?'SUN ABOVE HORIZON':'SUN BELOW HORIZON';
+      const sunBody=sky.bodies?.sun;
+      const sunStatus=sunBody?.visible?(sky.sunAltitude<0?'SUN LIMB VISIBLE':'SUN ABOVE HORIZON'):'SUN BELOW HORIZON';
       const sunrise=sky.sunriseInHours==null?'not in forecast window':formatSkyInterval(sky.sunriseInHours);
       const sunset=sky.sunsetInHours==null?'not in forecast window':formatSkyInterval(sky.sunsetInHours);
-      const sunLine=`SUN ${sky.sunAltitude>=0?'ABOVE':'BELOW'} HORIZON · ALT ${sky.sunAltitude>=0?'+':''}${sky.sunAltitude.toFixed(1)}° · SUNRISE IN ${sunrise} · SUNSET IN ${sunset}`;
+      const sunLine=`${sunStatus} · ALT ${sky.sunAltitude>=0?'+':''}${sky.sunAltitude.toFixed(1)}° · SUNRISE IN ${sunrise} · SUNSET IN ${sunset}`;
       const above=sky.above.length?sky.above.map(x=>x.toUpperCase()).join(', '):'NONE';
       const below=sky.below.length?sky.below.map(x=>x.toUpperCase()).join(', '):'NONE';
       set('sky-sun-readout',sunLine);
@@ -589,18 +590,19 @@ $('#sky-center-button')?.addEventListener('click',()=>{
     toast(`${name.toUpperCase()} is ${altitude}° below the horizon (azimuth ${azimuth}°). Advance mission time until it rises, or select a body above the horizon.`, 'info');
     return;
   }
-  scene.focusSkyBody(name);
-  toast(`Tracking ${name.toUpperCase()}: the camera gently follows its movement while keeping the outpost in view.`, 'success');
+  scene.focusSkyBody(name);syncWalkControls();
+  toast(`Telescope tracking ${name.toUpperCase()}: the camera stays on the planetary surface while the globe is magnified.`, 'success');
 });
 $('#sky-zoom-in')?.addEventListener('click',()=>{
   const name=$('#sky-target-select')?.value||'sun';
-  scene.zoomSkyBody(-1.5,name);
-  toast('Surface and local-sky view zoomed in. The selected planet remains in context.','info');
+  if(!scene.zoomSkyBody(-1.5,name)){toast('Select a body above the horizon, then choose TRACK BODY.','info');return;}
+  toast('Telescope magnification increased; the Moon/Mars surface view is preserved.','info');
   syncWalkControls();
 });
 $('#sky-zoom-out')?.addEventListener('click',()=>{
   const name=$('#sky-target-select')?.value||'sun';
   if(!scene.zoomSkyBody(1.5,name)) toast('Select a body above the horizon and choose TRACK BODY first.', 'info');
+  else toast('Telescope magnification reduced; the surface camera remains in place.','info');
   syncWalkControls();
 });
 $('#sky-reset-view')?.addEventListener('click',()=>{scene.resetSkyView();syncWalkControls();toast('Returned to the outpost camera.','info');});

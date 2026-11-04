@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getSkyRotationOffset, getSkyReport } from './astronomy.js';
-import { getPlanetTerrainNoise, getPlanetSurfaceHeight, PLANET_SURFACE_RADIUS, SKY_SHELL_RADIUS, getSkyMarkerRadius, adjustSceneZoom } from './scene-math.js';
+import { getPlanetSurfaceHeight } from './scene-math.js';
 
 export function createLunarScene(canvas) {
   const scene = new THREE.Scene();
@@ -12,68 +12,194 @@ export function createLunarScene(canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.2;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const camera = new THREE.PerspectiveCamera(42, 1, .1, 160);
   camera.position.set(0, 7.3, 17.8); camera.lookAt(0, 1.5, 0);
   scene.add(new THREE.HemisphereLight(0x91b8e4, 0x392a35, 1.65));
-  const keyLight = new THREE.DirectionalLight(0xffe5c3, 3.2); keyLight.position.set(-7, 12, 8); scene.add(keyLight);
+  const keyLight = new THREE.DirectionalLight(0xffe5c3, 3.2);
+  keyLight.position.set(-7, 12, 8); keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(1024, 1024);
+  keyLight.shadow.camera.left = -48; keyLight.shadow.camera.right = 48;
+  keyLight.shadow.camera.top = 42; keyLight.shadow.camera.bottom = -42;
+  keyLight.shadow.camera.near = .5; keyLight.shadow.camera.far = 110;
+  keyLight.shadow.camera.updateProjectionMatrix();
+  keyLight.shadow.bias = -.00018; keyLight.shadow.normalBias = .025;
+  scene.add(keyLight);
   const rimLight = new THREE.DirectionalLight(0x5b9fff, 1.4); rimLight.position.set(8, 6, -8); scene.add(rimLight);
   const baseGlow = new THREE.PointLight(0x63dff6, 1.1, 13); baseGlow.position.set(0, 3, 2); scene.add(baseGlow);
   const mat = (color, roughness = .8, metalness = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra });
 
-  // A full spherical ground mesh removes the visible square slab and creates a
-  // continuous curved horizon. Curvature is deliberately exaggerated for teaching.
-  const terrainRadius = PLANET_SURFACE_RADIUS;
-  const terrainGeo = new THREE.SphereGeometry(terrainRadius, 256, 128);
-  const pos = terrainGeo.attributes.position, colors = [], terrainBasePositions = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    terrainBasePositions[i * 3] = x; terrainBasePositions[i * 3 + 1] = y; terrainBasePositions[i * 3 + 2] = z;
-    const normalX = x / terrainRadius, normalY = y / terrainRadius, normalZ = z / terrainRadius;
-    const lunarHeight = getPlanetTerrainNoise(x, z, 'moon');
-    pos.setXYZ(i, x + normalX * lunarHeight, y + normalY * lunarHeight, z + normalZ * lunarHeight);
-    const variation = (Math.sin(x * 1.8) * Math.cos(z * 1.5) + 1) / 2;
-    colors.push(.26 + variation * .12, .27 + variation * .08, .31 + variation * .07);
+  // Circular spherical-cap terrain: the local curvature is deliberately
+  // exaggerated so the planetary limb is clearly visible from the normal
+  // gameplay camera, rather than reading as a square floor plane.
+  const terrainRadius = 156, terrainRings = 104, terrainSegments = 288;
+  const terrainVertexPositions = [], terrainVertexColors = [], terrainVertexUvs = [];
+  const terrainIndices = [], terrainBaseXZ = [];
+  const addTerrainVertex = (x, z) => {
+    terrainBaseXZ.push(x, z);
+    terrainVertexPositions.push(x, getPlanetSurfaceHeight(x, z, 'moon'), z);
+    const variation = (Math.sin(x * .17) * Math.cos(z * .14) + 1) / 2;
+    terrainVertexColors.push(.29 + variation * .12, .30 + variation * .10, .34 + variation * .09);
+    terrainVertexUvs.push(.5 + x / (terrainRadius * 2), .5 + z / (terrainRadius * 2));
+  };
+  addTerrainVertex(0, 0);
+  for (let ring = 1; ring <= terrainRings; ring++) {
+    const radius = terrainRadius * ring / terrainRings;
+    for (let segment = 0; segment < terrainSegments; segment++) {
+      const angle = segment / terrainSegments * Math.PI * 2;
+      addTerrainVertex(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    }
   }
-  terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  const terrainBaseColors = colors.slice(); terrainGeo.computeVertexNormals();
-  const terrain = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: false }));
-  terrain.position.set(0, -terrainRadius - .22, 0); scene.add(terrain);
-  let terrainDestination = 'moon';
-  const surfaceY = (x, z, destination = terrainDestination) => getPlanetSurfaceHeight(x, z, destination);
+  for (let segment = 0; segment < terrainSegments; segment++) {
+    const next = (segment + 1) % terrainSegments;
+    terrainIndices.push(0, 1 + next, 1 + segment);
+  }
+  for (let ring = 1; ring < terrainRings; ring++) {
+    const inner = 1 + (ring - 1) * terrainSegments;
+    const outer = 1 + ring * terrainSegments;
+    for (let segment = 0; segment < terrainSegments; segment++) {
+      const next = (segment + 1) % terrainSegments;
+      terrainIndices.push(
+        inner + segment, inner + next, outer + next,
+        inner + segment, outer + next, outer + segment
+      );
+    }
+  }
+  const terrainTextures = {};
+  function makeTerrainTexture(destination) {
+    const textureCanvas = document.createElement('canvas');
+    textureCanvas.width = 512; textureCanvas.height = 512;
+    const ctx = textureCanvas.getContext('2d');
+    const image = ctx.createImageData(512, 512);
+    let seed = destination === 'mars' ? 20261104 : 20260720;
+    const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let y = 0; y < 512; y++) {
+      for (let x = 0; x < 512; x++) {
+        const broad = Math.sin(x * .035 + Math.sin(y * .021)) * 5 +
+          Math.cos(y * .041 - Math.cos(x * .018)) * 4;
+        const grain = (random() - .5) * 25;
+        const value = Math.max(0, Math.min(255, 224 + broad + grain));
+        const index = (y * 512 + x) * 4;
+        image.data[index] = value;
+        image.data[index + 1] = value;
+        image.data[index + 2] = value;
+        image.data[index + 3] = 255;
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+    // Small impact pits on the Moon; wind-etched streaks and scattered grit on Mars.
+    if (destination === 'moon') {
+      for (let i = 0; i < 115; i++) {
+        const x = random() * 512, y = random() * 512, r = 1.2 + random() * 5.5;
+        ctx.fillStyle = 'rgba(36,39,45,.13)';
+        ctx.beginPath(); ctx.ellipse(x, y, r * 1.35, r, random(), 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(250,250,246,.13)'; ctx.lineWidth = 1.1; ctx.stroke();
+      }
+    } else {
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 72; i++) {
+        const x = random() * 512, y = random() * 512, length = 12 + random() * 70;
+        ctx.strokeStyle = i % 2 ? 'rgba(83,42,32,.08)' : 'rgba(255,205,160,.10)';
+        ctx.lineWidth = .6 + random() * 2.1;
+        ctx.beginPath(); ctx.moveTo(x, y);
+        ctx.bezierCurveTo(x + length * .25, y - 4, x + length * .7, y + 4, x + length, y - 1);
+        ctx.stroke();
+      }
+    }
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return texture;
+  }
+  terrainTextures.moon = makeTerrainTexture('moon');
+  terrainTextures.mars = makeTerrainTexture('mars');
+
+  const terrainGeo = new THREE.BufferGeometry();
+  terrainGeo.setAttribute('position', new THREE.Float32BufferAttribute(terrainVertexPositions, 3));
+  terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(terrainVertexColors, 3));
+  terrainGeo.setAttribute('uv', new THREE.Float32BufferAttribute(terrainVertexUvs, 2));
+  terrainGeo.setIndex(terrainIndices);
+  terrainGeo.computeVertexNormals();
+  const terrainBaseColors = terrainVertexColors.slice();
+  const terrainMaterial = new THREE.MeshStandardMaterial({
+    map: terrainTextures.moon, vertexColors: true, roughness: 1,
+    flatShading: false, side: THREE.DoubleSide
+  });
+  const terrain = new THREE.Mesh(terrainGeo, terrainMaterial);
+  terrain.receiveShadow = true;
+  scene.add(terrain);
+  const surfaceY = (x, z, destination = 'moon') => getPlanetSurfaceHeight(x, z, destination);
   const rockMat = mat(0x6e707b, 1), craterMat = mat(0x353b49, 1);
   const moonCraterFeatures = new THREE.Group(); scene.add(moonCraterFeatures);
+  const moonCraterAnchors = [];
   for (let i = 0; i < 13; i++) {
     const angle = i * 2.4, radius = 12 + (i % 4) * 3, x = Math.cos(angle) * radius, z = Math.sin(angle) * radius - 8, size = 1.2 + (i % 4) * .65;
     const ground = surfaceY(x, z, 'moon');
-    const crater = new THREE.Mesh(new THREE.TorusGeometry(size, .22, 7, 24), rockMat); crater.rotation.x = Math.PI / 2; crater.position.set(x, ground + .12, z); crater.scale.set(1.35, .8, 1); moonCraterFeatures.add(crater);
-    const bowl = new THREE.Mesh(new THREE.CircleGeometry(size * .91, 24), craterMat); bowl.rotation.x = -Math.PI / 2; bowl.position.set(x, ground + .015, z); bowl.scale.set(1.35, .8, 1); moonCraterFeatures.add(bowl);
+    const crater = new THREE.Mesh(new THREE.TorusGeometry(size, .22, 7, 24), rockMat);
+    crater.rotation.x = Math.PI / 2; crater.position.set(x, ground + .10, z); crater.scale.set(1.35, .8, 1); moonCraterFeatures.add(crater);
+    const bowl = new THREE.Mesh(new THREE.CircleGeometry(size * .91, 24), craterMat);
+    bowl.rotation.x = -Math.PI / 2; bowl.position.set(x, ground + .015, z); bowl.scale.set(1.35, .8, 1); moonCraterFeatures.add(bowl);
+    moonCraterAnchors.push({ crater, bowl, x, z });
   }
   const marsSurfaceFeatures = new THREE.Group(); scene.add(marsSurfaceFeatures);
   const marsDuneMat = mat(0x9b5743, 1), marsMesaMat = mat(0x754235, 1);
+  const marsDuneAnchors = [], marsMesaAnchors = [];
   for (let i = 0; i < 13; i++) {
     const angle = i * 2.399, radius = 8 + (i % 4) * 5;
+    const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius - 4;
     const mound = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 10), marsDuneMat);
     mound.scale.set(2.6 + (i % 3) * .7, .20 + (i % 2) * .08, 1.15 + (i % 4) * .2);
-    const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius - 4;
-    mound.position.set(x, surfaceY(x, z, 'mars') + mound.scale.y, z);
+    const lift = mound.scale.y * .55;
+    mound.position.set(x, surfaceY(x, z, 'mars') + lift, z);
     mound.rotation.y = angle * .6; marsSurfaceFeatures.add(mound);
+    marsDuneAnchors.push({ mesh: mound, x, z, lift });
   }
   for (let i = 0; i < 6; i++) {
-    const x = -24 + i * 9.2, z = -21 - (i % 3) * 4;
-    const mesaHeight = 1.25 + (i % 2) * .45;
-    const mesa = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 2.1, mesaHeight, 7), marsMesaMat);
-    mesa.position.set(x, surfaceY(x, z, 'mars') + mesaHeight / 2, z); mesa.rotation.y = i * .47; marsSurfaceFeatures.add(mesa);
+    const x = -24 + i * 9.2, z = -21 - (i % 3) * 4, height = 1.25 + (i % 2) * .45;
+    const mesa = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 2.1, height, 7), marsMesaMat);
+    mesa.position.set(x, surfaceY(x, z, 'mars') + height / 2, z);
+    mesa.rotation.y = i * .47; marsSurfaceFeatures.add(mesa);
+    marsMesaAnchors.push({ mesh: mesa, x, z, height });
   }
   const looseSurfaceRocks = [];
   for (let i = 0; i < 110; i++) {
     const r = 5 + Math.random() * 35, a = Math.random() * Math.PI * 2, size = .06 + Math.random() * .28;
     const x = Math.cos(a) * r, z = Math.sin(a) * r - 6;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), rockMat);
-    rock.position.set(x, surfaceY(x, z, 'moon') + size * .35, z); rock.rotation.set(Math.random() * 2, Math.random() * 2, Math.random() * 2); rock.scale.y = .45 + Math.random() * .6; scene.add(rock);
+    rock.position.set(x, surfaceY(x, z, 'moon') + size * .25, z);
+    rock.rotation.set(Math.random() * 2, Math.random() * 2, Math.random() * 2);
+    rock.scale.y = .45 + Math.random() * .6; scene.add(rock);
     looseSurfaceRocks.push({ mesh: rock, x, z, size });
   }
 
-  // Low distant ridges add a visible horizon without blocking the outpost.
+  // Hundreds of low-poly pebbles add close-range regolith detail in one draw call.
+  const pebbleCount = 280;
+  const pebbleGeometry = new THREE.DodecahedronGeometry(1, 0);
+  const pebbleMaterial = mat(0x777982, 1);
+  const surfacePebbles = new THREE.InstancedMesh(pebbleGeometry, pebbleMaterial, pebbleCount);
+  const pebbleTransform = new THREE.Object3D();
+  const pebbleAnchors = [];
+  let pebbleSeed = 81421;
+  const pebbleRandom = () => { pebbleSeed = (pebbleSeed * 1664525 + 1013904223) >>> 0; return pebbleSeed / 4294967296; };
+  for (let i = 0; i < pebbleCount; i++) {
+    const radius = 6 + pebbleRandom() * 54, angle = pebbleRandom() * Math.PI * 2;
+    const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius - 5;
+    const size = .035 + pebbleRandom() * .105;
+    const sx = size * (.7 + pebbleRandom() * .8), sy = size * (.45 + pebbleRandom() * .55), sz = size * (.7 + pebbleRandom() * .8);
+    const rx = pebbleRandom() * Math.PI, ry = pebbleRandom() * Math.PI, rz = pebbleRandom() * Math.PI;
+    pebbleTransform.position.set(x, surfaceY(x, z, 'moon') + sy * .45, z);
+    pebbleTransform.rotation.set(rx, ry, rz);
+    pebbleTransform.scale.set(sx, sy, sz);
+    pebbleTransform.updateMatrix();
+    surfacePebbles.setMatrixAt(i, pebbleTransform.matrix);
+    pebbleAnchors.push({ x, z, sy, sx, sz, rx, ry, rz });
+  }
+  surfacePebbles.instanceMatrix.needsUpdate = true;
+  surfacePebbles.castShadow = true; surfacePebbles.receiveShadow = true;
+  scene.add(surfacePebbles);
+
+  // Low distant ridges are terrain-anchored, so they follow the curved horizon.
   const horizonGroup = new THREE.Group(); scene.add(horizonGroup);
   const horizonFarMat = mat(0x424a58, 1, 0);
   const horizonNearMat = mat(0x555b68, 1, 0);
@@ -84,127 +210,153 @@ export function createLunarScene(canvas) {
     const height = 2.6 + Math.random() * 4.8;
     const radius = 2.4 + Math.random() * 3.6;
     const peak = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 5 + (i % 3)), i % 2 ? horizonFarMat : horizonNearMat);
-    peak.position.set(x, surfaceY(x, z, 'moon') + height / 2, z); peak.rotation.y = Math.random() * Math.PI; peak.rotation.z = (Math.random() - .5) * .16;
-    horizonGroup.add(peak); horizonAnchors.push({ mesh: peak, x, z, height });
+    peak.position.set(x, surfaceY(x, z, 'moon') + height * .47, z);
+    peak.rotation.y = Math.random() * Math.PI; peak.rotation.z = (Math.random() - .5) * .16;
+    horizonGroup.add(peak); horizonAnchors.push({ mesh: peak, x, z, lift: height * .47 });
   }
   for (let i = 0; i < 15; i++) {
     const x = -34 + i * 4.8 + (Math.random() - .5) * 2;
     const z = -34 - Math.random() * 8;
     const height = 3.5 + Math.random() * 5.5;
     const peak = new THREE.Mesh(new THREE.ConeGeometry(3.5 + Math.random() * 3, height, 6), horizonFarMat);
-    peak.position.set(x, surfaceY(x, z, 'moon') + height / 2, z); peak.rotation.y = Math.random() * Math.PI; horizonGroup.add(peak); horizonAnchors.push({ mesh: peak, x, z, height });
+    peak.position.set(x, surfaceY(x, z, 'moon') + height * .45, z);
+    peak.rotation.y = Math.random() * Math.PI; horizonGroup.add(peak);
+    horizonAnchors.push({ mesh: peak, x, z, lift: height * .45 });
   }
   const starGeo = new THREE.BufferGeometry(), starPoints = [];
   for (let i = 0; i < 1000; i++) starPoints.push((Math.random() - .5) * 160, 8 + Math.random() * 75, -35 - Math.random() * 65);
   starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPoints, 3));
   const starsMaterial = new THREE.PointsMaterial({ color: 0xdbeaff, size: .11, transparent: true, opacity: .8 });
   const stars = new THREE.Points(starGeo, starsMaterial); scene.add(stars);
-
+  // Small deterministic canvas textures keep the sky readable without external
+  // image downloads or a dependency on a remote asset host.
+  const planetTextures = [];
   function makePlanetTexture(name) {
-    const textureCanvas = document.createElement('canvas'); textureCanvas.width = 512; textureCanvas.height = 256;
+    const textureCanvas = document.createElement('canvas');
+    textureCanvas.width = 512; textureCanvas.height = 256;
     const ctx = textureCanvas.getContext('2d');
     const palettes = {
-      sun: ['#ffb347', '#ffe29a'], mercury: ['#514d49', '#a69b8e'], venus: ['#9f8050', '#f0d8a0'],
-      earth: ['#0b315c', '#1c6590'], mars: ['#71372b', '#d47b51'], jupiter: ['#8c6046', '#e4c7a0'],
-      saturn: ['#927b58', '#e4d0a5'], uranus: ['#438b94', '#b4e6df'], neptune: ['#173b8b', '#548fe1']
+      sun: ['#d86b24', '#ffe5a0'], mercury: ['#514d49', '#b1a79a'],
+      venus: ['#9f8050', '#f0d8a0'], earth: ['#09284d', '#1c6590'],
+      mars: ['#71372b', '#d47b51'], jupiter: ['#80553f', '#e4c7a0'],
+      saturn: ['#806d4e', '#e4d0a5'], uranus: ['#367d86', '#b4e6df'],
+      neptune: ['#173b8b', '#548fe1']
     };
     const [dark, light] = palettes[name] || ['#526070', '#aab8c7'];
-    const gradient = ctx.createLinearGradient(0, 0, 0, 256); gradient.addColorStop(0, light); gradient.addColorStop(.5, dark); gradient.addColorStop(1, light);
+    const gradient = ctx.createLinearGradient(0, 0, 0, 256);
+    gradient.addColorStop(0, light); gradient.addColorStop(.5, dark); gradient.addColorStop(1, light);
     ctx.fillStyle = gradient; ctx.fillRect(0, 0, 512, 256);
-    let seed = name.split('').reduce((n, ch) => n * 31 + ch.charCodeAt(0), 17) >>> 0;
-    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    let seed = name.split('').reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 17);
+    const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
     if (name === 'sun') {
-      for (let i = 0; i < 180; i++) {
-        const x = rand() * 512, y = rand() * 256, r = 1 + rand() * 5;
-        ctx.fillStyle = rand() > .5 ? '#fff0b866' : '#e77a2f55';
-        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 240; i++) {
+        const x = random() * 512, y = random() * 256, radius = 1 + random() * 5;
+        ctx.fillStyle = random() > .5 ? 'rgba(255,240,184,.38)' : 'rgba(180,65,28,.24)';
+        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
       }
-      for (let i = 0; i < 7; i++) {
-        ctx.fillStyle = '#b64d2b55'; ctx.beginPath(); ctx.ellipse(rand() * 512, rand() * 256, 4 + rand() * 5, 2 + rand() * 3, rand(), 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 9; i++) {
+        ctx.fillStyle = 'rgba(145,52,26,.28)'; ctx.beginPath();
+        ctx.ellipse(random() * 512, random() * 256, 4 + random() * 7, 2 + random() * 4, random(), 0, Math.PI * 2); ctx.fill();
       }
-    } else if (['jupiter', 'saturn', 'uranus', 'neptune'].includes(name)) {
-      const bands = name === 'jupiter' ? 25 : name === 'saturn' ? 18 : 13;
-      for (let i = 0; i < bands; i++) {
-        const y = i * 256 / bands, h = 3 + rand() * 10;
-        ctx.fillStyle = i % 2 ? `${dark}bb` : `${light}88`;
-        ctx.fillRect(0, y, 512, h);
-        ctx.globalAlpha = .28; ctx.fillStyle = i % 2 ? light : dark;
-        ctx.fillRect(0, y + h, 512, 2 + rand() * 4); ctx.globalAlpha = 1;
-      }
-      if (name === 'jupiter') { ctx.fillStyle = '#b85d42'; ctx.beginPath(); ctx.ellipse(348, 151, 36, 15, -.12, 0, Math.PI * 2); ctx.fill(); }
-      if (name === 'neptune') { ctx.fillStyle = '#142f70'; ctx.beginPath(); ctx.ellipse(332, 112, 22, 11, -.2, 0, Math.PI * 2); ctx.fill(); }
     } else if (name === 'earth') {
       const continents = [[95, 82, 78, 38], [180, 158, 58, 31], [292, 82, 66, 30], [390, 158, 54, 26], [435, 64, 30, 19]];
       ctx.fillStyle = '#56865b';
       for (const [x, y, rx, ry] of continents) {
-        ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rand() * .8, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = .35; ctx.fillStyle = '#b1a66c'; ctx.beginPath(); ctx.ellipse(x + rx * .18, y - ry * .12, rx * .52, ry * .3, rand(), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#56865b';
+        ctx.beginPath(); ctx.ellipse(x, y, rx, ry, random() * .8, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = .35; ctx.fillStyle = '#b1a66c';
+        ctx.beginPath(); ctx.ellipse(x + rx * .18, y - ry * .12, rx * .52, ry * .3, random(), 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1; ctx.fillStyle = '#56865b';
       }
-      ctx.fillStyle = '#e9f2f4'; ctx.fillRect(0, 0, 512, 13); ctx.fillRect(0, 243, 512, 13);
+      ctx.fillStyle = 'rgba(238,247,250,.9)'; ctx.fillRect(0, 0, 512, 13); ctx.fillRect(0, 243, 512, 13);
+    } else if (['jupiter', 'saturn', 'uranus', 'neptune'].includes(name)) {
+      const bands = name === 'jupiter' ? 27 : name === 'saturn' ? 20 : 14;
+      for (let i = 0; i < bands; i++) {
+        const y = i * 256 / bands, height = 3 + random() * 10;
+        ctx.fillStyle = i % 2 ? `${dark}bb` : `${light}88`;
+        ctx.fillRect(0, y, 512, height);
+        ctx.globalAlpha = .25; ctx.fillStyle = i % 2 ? light : dark;
+        ctx.fillRect(0, y + height, 512, 2 + random() * 4); ctx.globalAlpha = 1;
+      }
+      if (name === 'jupiter') {
+        ctx.fillStyle = '#b85d42'; ctx.beginPath(); ctx.ellipse(348, 151, 36, 15, -.12, 0, Math.PI * 2); ctx.fill();
+      }
+      if (name === 'neptune') {
+        ctx.fillStyle = '#142f70'; ctx.beginPath(); ctx.ellipse(332, 112, 22, 11, -.2, 0, Math.PI * 2); ctx.fill();
+      }
     } else {
-      const craterCount = name === 'mercury' ? 90 : name === 'mars' ? 32 : name === 'venus' ? 12 : 18;
-      for (let i = 0; i < craterCount; i++) {
-        const x = rand() * 512, y = rand() * 256, r = 2 + rand() * (name === 'mercury' ? 13 : 8);
-        ctx.fillStyle = name === 'mercury' ? '#282a2c66' : name === 'mars' ? '#5b292855' : '#fff0c033';
-        ctx.beginPath(); ctx.ellipse(x, y, r * 1.35, r, rand(), 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = name === 'mercury' ? '#d0c4b277' : '#fff0c044'; ctx.lineWidth = 1.5; ctx.stroke();
+      const count = name === 'mercury' ? 100 : name === 'mars' ? 42 : 18;
+      for (let i = 0; i < count; i++) {
+        const x = random() * 512, y = random() * 256, radius = 2 + random() * (name === 'mercury' ? 13 : 8);
+        ctx.fillStyle = name === 'mercury' ? 'rgba(35,38,40,.38)' : name === 'mars' ? 'rgba(91,41,40,.34)' : 'rgba(255,240,192,.22)';
+        ctx.beginPath(); ctx.ellipse(x, y, radius * 1.35, radius, random(), 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,240,210,.25)'; ctx.lineWidth = 1.5; ctx.stroke();
       }
-      if (name === 'mars') { ctx.fillStyle = '#e6c7a2'; ctx.globalAlpha = .65; ctx.fillRect(0, 0, 512, 9); ctx.fillRect(0, 247, 512, 9); ctx.globalAlpha = 1; }
-      if (name === 'venus') { ctx.strokeStyle = '#f7e2b077'; ctx.lineWidth = 8; for (let y = 20; y < 256; y += 42) { ctx.beginPath(); ctx.moveTo(0, y); ctx.bezierCurveTo(150, y - 20, 330, y + 24, 512, y - 8); ctx.stroke(); } }
+      if (name === 'venus') {
+        ctx.strokeStyle = 'rgba(247,226,176,.48)'; ctx.lineWidth = 8;
+        for (let y = 20; y < 256; y += 42) {
+          ctx.beginPath(); ctx.moveTo(0, y);
+          ctx.bezierCurveTo(150, y - 20, 330, y + 24, 512, y - 8); ctx.stroke();
+        }
+      }
     }
-    const texture = new THREE.CanvasTexture(textureCanvas); texture.colorSpace = THREE.SRGBColorSpace; texture.wrapS = THREE.RepeatWrapping; texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    planetTextures.push(texture);
     return texture;
   }
+  const planetMaterial = (name, roughness = .85, metalness = 0, extra = {}) =>
+    mat(0xffffff, roughness, metalness, { map: makePlanetTexture(name), ...extra });
 
-  // Celestial bodies are placed on a local sky shell; physical distances are shown separately.
+  // Distant celestial bodies are placed on a local sky shell. Their displayed
+  // globe sizes are intentionally enlarged for learning, not physical scale.
   const sun = new THREE.Group(); scene.add(sun); sun.position.set(-23, 14, -34);
-  const sunCore = new THREE.Mesh(new THREE.SphereGeometry(2.15, 32, 24), new THREE.MeshBasicMaterial({ map: makePlanetTexture('sun'), color: 0xffffff })); sun.add(sunCore);
+  const sunCore = new THREE.Mesh(new THREE.SphereGeometry(2.15, 40, 28), new THREE.MeshBasicMaterial({ map: makePlanetTexture('sun') })); sun.add(sunCore);
   const sunGlow = new THREE.Mesh(new THREE.SphereGeometry(2.8, 24, 18), new THREE.MeshBasicMaterial({ color: 0xffa34d, transparent: true, opacity: .14, side: THREE.BackSide })); sun.add(sunGlow);
   const sunHalo = new THREE.Mesh(new THREE.SphereGeometry(3.7, 20, 16), new THREE.MeshBasicMaterial({ color: 0xff8a4c, transparent: true, opacity: .045, side: THREE.BackSide })); sun.add(sunHalo);
   const sunLight = new THREE.PointLight(0xffc47b, 1.4, 80); sunLight.position.copy(sun.position); scene.add(sunLight);
 
   const earth = new THREE.Group(); scene.add(earth);
-  const earthSphere = new THREE.Mesh(new THREE.SphereGeometry(1.05, 32, 24), mat(0xffffff, .5, .1, { map: makePlanetTexture('earth'), emissive: 0x071a2b })); earth.add(earthSphere);
+  const earthSphere = new THREE.Mesh(new THREE.SphereGeometry(1.05, 40, 28), planetMaterial('earth', .5, .1, { emissive: 0x071a2b })); earth.add(earthSphere);
   const earthClouds = new THREE.Mesh(new THREE.SphereGeometry(1.08, 24, 18), new THREE.MeshBasicMaterial({ color: 0xb8e3ff, transparent: true, opacity: .13, wireframe: true })); earth.add(earthClouds);
   const earthHalo = new THREE.Mesh(new THREE.SphereGeometry(1.18, 24, 18), new THREE.MeshBasicMaterial({ color: 0x4b9bff, transparent: true, opacity: .12, side: THREE.BackSide })); earth.add(earthHalo);
 
   const mars = new THREE.Group(); scene.add(mars);
-  const marsSphere = new THREE.Mesh(new THREE.SphereGeometry(.72, 24, 18), mat(0xffffff, .95, 0, { map: makePlanetTexture('mars'), emissive: 0x210a05 })); mars.add(marsSphere);
+  const marsSphere = new THREE.Mesh(new THREE.SphereGeometry(.72, 32, 24), planetMaterial('mars', .95, 0, { emissive: 0x210a05 })); mars.add(marsSphere);
   const marsHalo = new THREE.Mesh(new THREE.SphereGeometry(.87, 18, 12), new THREE.MeshBasicMaterial({ color: 0xe48a66, transparent: true, opacity: .08, side: THREE.BackSide })); mars.add(marsHalo);
 
-  // Planet markers are intentionally enlarged for learning; their sky directions
-  // and motion come from JPL approximate orbital elements, not a decorative orbit.
   const mercury = new THREE.Group(); scene.add(mercury);
-  mercury.add(new THREE.Mesh(new THREE.SphereGeometry(.22, 18, 14), mat(0xffffff, .95, 0, { map: makePlanetTexture('mercury') })));
+  mercury.add(new THREE.Mesh(new THREE.SphereGeometry(.22, 24, 18), planetMaterial('mercury', .95)));
 
   const venus = new THREE.Group(); scene.add(venus);
-  venus.add(new THREE.Mesh(new THREE.SphereGeometry(.34, 20, 16), mat(0xffffff, .85, 0, { map: makePlanetTexture('venus') })));
+  venus.add(new THREE.Mesh(new THREE.SphereGeometry(.34, 28, 20), planetMaterial('venus', .85)));
 
   const jupiter = new THREE.Group(); scene.add(jupiter);
-  jupiter.add(new THREE.Mesh(new THREE.SphereGeometry(.48, 24, 18), mat(0xffffff, .85, 0, { map: makePlanetTexture('jupiter') })));
+  jupiter.add(new THREE.Mesh(new THREE.SphereGeometry(.48, 32, 24), planetMaterial('jupiter', .85)));
 
   const saturn = new THREE.Group(); scene.add(saturn);
-  saturn.add(new THREE.Mesh(new THREE.SphereGeometry(.43, 24, 18), mat(0xffffff, .9, 0, { map: makePlanetTexture('saturn') })));
+  saturn.add(new THREE.Mesh(new THREE.SphereGeometry(.43, 32, 24), planetMaterial('saturn', .9)));
   const saturnRing = new THREE.Mesh(new THREE.TorusGeometry(.68, .10, 5, 40), mat(0xb9a078, .8, .1)); saturnRing.rotation.x = .42; saturnRing.rotation.y = -.2; saturn.add(saturnRing);
 
   const uranus = new THREE.Group(); scene.add(uranus);
-  uranus.add(new THREE.Mesh(new THREE.SphereGeometry(.28, 20, 16), mat(0xffffff, .65, 0, { map: makePlanetTexture('uranus') })));
+  uranus.add(new THREE.Mesh(new THREE.SphereGeometry(.28, 24, 18), planetMaterial('uranus', .65)));
 
   const neptune = new THREE.Group(); scene.add(neptune);
-  neptune.add(new THREE.Mesh(new THREE.SphereGeometry(.28, 20, 16), mat(0xffffff, .65, 0, { map: makePlanetTexture('neptune') })));
+  neptune.add(new THREE.Mesh(new THREE.SphereGeometry(.28, 24, 18), planetMaterial('neptune', .65)));
 
   const phobos = new THREE.Group(); scene.add(phobos);
   phobos.add(new THREE.Mesh(new THREE.DodecahedronGeometry(.26, 0), mat(0x977768, 1, 0)));
   const deimos = new THREE.Group(); scene.add(deimos);
   deimos.add(new THREE.Mesh(new THREE.DodecahedronGeometry(.14, 0), mat(0x8f7a6c, 1, 0)));
 
-  function skyWorldPosition(azimuth, altitude, radius = SKY_SHELL_RADIUS) {
+  function skyWorldPosition(azimuth, altitude, radius = 66) {
     const az = azimuth * Math.PI / 180, alt = altitude * Math.PI / 180;
     const horizontal = Math.cos(alt);
     return new THREE.Vector3(
       Math.sin(az) * horizontal * radius,
-      1.65 + Math.sin(alt) * radius,
-      -Math.cos(az) * horizontal * radius
+      Math.sin(alt) * radius + 5.5,
+      -Math.cos(az) * horizontal * radius - 24
     );
   }
 
@@ -239,20 +391,27 @@ export function createLunarScene(canvas) {
   };
   const skyBodyGroups = { sun, earth, mercury, venus, mars, jupiter, saturn, uranus, neptune, phobos, deimos };
   const skyTargets = {};
-  const skyBodyBaseRadii = { sun: 2.15, earth: 1.05, mercury: .22, venus: .34, mars: .72, jupiter: .48, saturn: .43, uranus: .28, neptune: .28, phobos: .26, deimos: .14 };
-  const skyMarkerRadii = {};
-  const skyTrackRing = new THREE.Mesh(new THREE.TorusGeometry(1, .025, 8, 48), new THREE.MeshBasicMaterial({ color: 0x8cecff, transparent: true, opacity: .92, depthTest: false, depthWrite: false }));
-  skyTrackRing.visible = false; skyTrackRing.renderOrder = 950; scene.add(skyTrackRing);
+  const skyBodyScales = {
+    moon: { sun: .82, earth: 1.12, mercury: 1.05, venus: 1.2, mars: 1.2, jupiter: 1.42, saturn: 1.38, uranus: 1.18, neptune: 1.18 },
+    mars: { sun: .82, earth: .72, mercury: 1.0, venus: 1.12, jupiter: 1.35, saturn: 1.3, uranus: 1.12, neptune: 1.12, phobos: 1.15, deimos: 1.1 }
+  };
+  const skyLabelOffsets = { sun: 2.1, earth: 1.3, mercury: .8, venus: 1, mars: .95, jupiter: 1.25, saturn: 1.2, uranus: .9, neptune: .9, phobos: .75, deimos: .65 };
+  const skyBodyVisualRadii = { sun: 3.7, earth: 1.18, mercury: .22, venus: .34, mars: .87, jupiter: .48, saturn: .78, uranus: .28, neptune: .28, phobos: .26, deimos: .14 };
   let skyLabelsVisible = true;
   let focusedSkyBody = null;
-  function applySkyMarkerScale(name, body, highlighted = false) {
-    const group = skyBodyGroups[name];
-    if (!group || !body) return .12;
-    const radius = getSkyMarkerRadius(name, body, SKY_SHELL_RADIUS);
-    skyMarkerRadii[name] = radius;
-    group.scale.setScalar((radius / (skyBodyBaseRadii[name] || 1)) * (highlighted ? 1.12 : 1));
-    return radius;
-  }
+  let focusedSkyMagnification = 1;
+  const skyTrackRing = new THREE.Mesh(
+    new THREE.TorusGeometry(1, .025, 8, 56),
+    new THREE.MeshBasicMaterial({ color: 0x8cecff, transparent: true, opacity: .92, depthTest: false, depthWrite: false })
+  );
+  skyTrackRing.visible = false;
+  skyTrackRing.renderOrder = 950;
+  scene.add(skyTrackRing);
+  const applySkyBodyScale = name => {
+    const scales = skyBodyScales[activeDestination] || skyBodyScales.moon;
+    const magnification = focusedSkyBody === name ? focusedSkyMagnification : 1;
+    skyBodyGroups[name]?.scale.setScalar((scales[name] || 1) * magnification);
+  };
   function setSkyLabelsVisible(visible) {
     skyLabelsVisible = Boolean(visible);
     Object.values(skyLabels).forEach(label => { label.visible = skyLabelsVisible && label.userData.aboveHorizon !== false; });
@@ -420,7 +579,6 @@ export function createLunarScene(canvas) {
   const skyEpochMs = Date.now() - 6 * 3600000;
   let latestSky = null;
   const orbitState = { yaw: 0, pitch: 0, radius: 18, targetYaw: 0, targetPitch: 0, targetRadius: 18 };
-  let targetCameraFov = 42;
   const pointerState = { down: false, x: 0, y: 0, mode: 'orbit' };
   let walkMode = false;
   const walkPosition = new THREE.Vector3(0, 1.65, 10.5);
@@ -443,6 +601,49 @@ export function createLunarScene(canvas) {
     rover: new THREE.Vector3(5.1,0,1.8),
     research: new THREE.Vector3(-3.1,0,.55)
   };
+
+  // Re-seat every world object on the same curved surface used by the terrain.
+  function syncSurfaceAnchors(destination = activeDestination) {
+    const place = (object, x, z, lift = 0) => {
+      if (object) object.position.y = surfaceY(x, z, destination) + lift;
+    };
+    place(habitat, 0, 0); place(lab, -3.15, .45); place(greenhouse, 3.15, .45);
+    place(tunnel, -1.95, .3, .62);
+    place(solarA.root, -6.1, 1.1); place(solarB.root, 6, 1);
+    place(systems, -4.6, 2.5); place(recycler, -6.15, 3.55);
+    place(antenna, 4.9, -1.5); place(rover, 2.7, 2.2);
+    crewActors.forEach(actor => {
+      actor.group.position.y = surfaceY(actor.group.position.x, actor.group.position.z, destination);
+      actor.base.y = surfaceY(actor.base.x, actor.base.z, destination);
+      actor.target.y = surfaceY(actor.target.x, actor.target.z, destination);
+    });
+    const updateGroundVector = vector => { vector.y = surfaceY(vector.x, vector.z, destination); };
+    Object.values(crewJobPositions).forEach(value =>
+      Array.isArray(value) ? value.forEach(updateGroundVector) : updateGroundVector(value)
+    );
+    crewShelterPositions.forEach(updateGroundVector);
+    place(prepBeaconA, -6.1, 1.1, 1.55); place(prepBeaconB, 6, 1, 1.55);
+    prepLightA.position.copy(prepBeaconA.position); prepLightB.position.copy(prepBeaconB.position);
+    place(greenhouseLight, 3.15, .45, 1.3);
+    place(ventGlow, -4.3, 2.5, 1.5);
+    place(recyclerLight, -6.15, 3.8, 1.1);
+    place(beaconLight, 4.9, -1.5, 2.9);
+    place(baseGlow, 0, 2, 3);
+    place(shield, 0, 0, .15); place(shieldGlow, 0, 0, 2.5);
+    place(radiationField, 0, 0, 1.2); place(radiationGlow, 0, 0, 4.4);
+    place(radiationRays, 0, 0, 0);
+    place(fxRing, 0, 0, .08); place(fxLight, 0, 0, 2.3);
+    roverTarget.y = surfaceY(roverTarget.x, roverTarget.z, destination);
+    pebbleAnchors.forEach((anchor, index) => {
+      pebbleTransform.position.set(anchor.x, surfaceY(anchor.x, anchor.z, destination) + anchor.sy * .45, anchor.z);
+      pebbleTransform.rotation.set(anchor.rx, anchor.ry, anchor.rz);
+      pebbleTransform.scale.set(anchor.sx, anchor.sy, anchor.sz);
+      pebbleTransform.updateMatrix();
+      surfacePebbles.setMatrixAt(index, pebbleTransform.matrix);
+    });
+    surfacePebbles.instanceMatrix.needsUpdate = true;
+    pebbleMaterial.color.setHex(destination === 'mars' ? 0x95604f : 0x777982);
+  }
   let cameraTarget = roomViews.engineering.target.clone();
   let cameraPositionTarget = roomViews.engineering.position.clone();
   syncOrbit(roomViews.engineering);
@@ -467,7 +668,7 @@ export function createLunarScene(canvas) {
       cameraTarget.z += dy * pan;
       cameraTarget.x = clamp(cameraTarget.x, -38, 38);
       cameraTarget.z = clamp(cameraTarget.z, -38, 38);
-      cameraTarget.y = surfaceY(cameraTarget.x, cameraTarget.z) + 1.5;
+      cameraTarget.y = surfaceY(cameraTarget.x, cameraTarget.z, activeDestination) + 1.5;
     } else {
       orbitState.targetYaw -= dx * .0065;
       orbitState.targetPitch = clamp(orbitState.targetPitch + dy * .0045, -.28, 1.16);
@@ -477,9 +678,13 @@ export function createLunarScene(canvas) {
   canvas.addEventListener('pointerup', pointerUp); canvas.addEventListener('pointerleave', pointerUp); canvas.addEventListener('pointercancel', pointerUp);
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    if (!walkMode) {
-      // Wheel zoom uses orbit distance only, keeping the original perspective.
-      orbitState.targetRadius = adjustSceneZoom(orbitState.targetRadius, e.deltaY * .012, 14, 24);
+    if (walkMode) return;
+    if (focusedSkyBody) {
+      focusedSkyMagnification = clamp(focusedSkyMagnification + (e.deltaY < 0 ? .16 : -.16), 1.15, 3.0);
+      applySkyBodyScale(focusedSkyBody);
+    } else {
+      // Keep the original outpost framing; mouse-wheel movement is deliberately modest.
+      orbitState.targetRadius = clamp(orbitState.targetRadius + e.deltaY * .0075, 14, 22);
     }
   }, { passive: false });
   canvas.addEventListener('dblclick', () => { if (walkMode) setWalkMode(false); else resetSkyView(); });
@@ -494,7 +699,7 @@ export function createLunarScene(canvas) {
     walkMode = Boolean(enabled);
     walkKeys.clear();
     if (walkMode) {
-      walkPosition.set(camera.position.x, surfaceY(camera.position.x, camera.position.z) + 1.65, camera.position.z);
+      walkPosition.set(camera.position.x, surfaceY(camera.position.x, camera.position.z, activeDestination) + 1.65, camera.position.z);
       walkYaw = -orbitState.yaw;
       walkPitch = 0;
       canvas.style.cursor = 'crosshair';
@@ -515,24 +720,30 @@ export function createLunarScene(canvas) {
     if (direction === 'right') walkPosition.addScaledVector(right, step);
     walkPosition.x = clamp(walkPosition.x, -43, 43);
     walkPosition.z = clamp(walkPosition.z, -43, 43);
-    walkPosition.y = surfaceY(walkPosition.x, walkPosition.z) + 1.65;
+        walkPosition.y = surfaceY(walkPosition.x, walkPosition.z, activeDestination) + 1.65;
   }
-  let skyTrackingBlend = 0;
-
   function clearSkyFocus() {
-    focusedSkyBody = null; skyTrackRing.visible = false;
-    for (const [name, group] of Object.entries(skyBodyGroups)) {
-      const body = latestSky?.bodies?.[name];
-      if (body) applySkyMarkerScale(name, body, false);
-      else group.scale.setScalar(1);
-    }
+    focusedSkyBody = null;
+    focusedSkyMagnification = 1;
+    skyTrackRing.visible = false;
+    const scales = skyBodyScales[activeDestination] || skyBodyScales.moon;
+    for (const [name, group] of Object.entries(skyBodyGroups)) group.scale.setScalar(scales[name] || 1);
     Object.values(skyLabels).forEach(label => label.scale.set(3.8, .92, 1));
+  }
+  function applyRoomCamera(view) {
+    const target = view.target.clone();
+    const position = view.position.clone();
+    const groundOffset = surfaceY(target.x, target.z, activeDestination);
+    target.y += groundOffset;
+    position.y += groundOffset;
+    cameraTarget.copy(target);
+    cameraPositionTarget.copy(position);
+    syncOrbit({ target, position });
   }
   function resetSkyView() {
     clearSkyFocus();
     if (walkMode) { walkMode = false; walkKeys.clear(); canvas.style.cursor = 'grab'; }
-    const view = roomViews[activeRoom] || roomViews.engineering;
-    targetCameraFov = 42; cameraTarget.copy(view.target); cameraPositionTarget.copy(view.position); syncOrbit(view);
+    applyRoomCamera(roomViews[activeRoom] || roomViews.engineering);
     return true;
   }
   function setRoom(room) {
@@ -540,43 +751,15 @@ export function createLunarScene(canvas) {
     activeRoom = room;
     if (walkMode) { walkMode = false; walkKeys.clear(); canvas.style.cursor = 'grab'; }
     clearSkyFocus();
-    targetCameraFov = 42; cameraTarget.copy(view.target); cameraPositionTarget.copy(view.position); syncOrbit(view);
+    applyRoomCamera(view);
   }
-
-  function syncSurfaceAnchors(destination = activeDestination) {
-    terrainDestination = destination;
-    const place = (object, x, z) => { if (object) object.position.y = surfaceY(x, z, destination); };
-    place(habitat, 0, 0); place(lab, -3.15, .45); place(greenhouse, 3.15, .45);
-    place(solarA.root, -6.1, 1.1); place(solarB.root, 6, 1);
-    place(systems, -4.6, 2.5); place(recycler, -6.15, 3.55); place(antenna, 4.9, -1.5); place(rover, 2.7, 2.2);
-    place(crewActors[0].group, -.85, 2.65); place(crewActors[1].group, -5.15, 3.35);
-    place(crewActors[2].group, 3.75, 2.2); place(crewActors[3].group, 2.35, 3.65);
-    crewActors.forEach(actor => { actor.base.y = surfaceY(actor.base.x, actor.base.z, destination); actor.target.y = surfaceY(actor.target.x, actor.target.z, destination); });
-    const updateGroundVector = vector => { vector.y = surfaceY(vector.x, vector.z, destination); };
-    Object.values(crewJobPositions).forEach(value => Array.isArray(value) ? value.forEach(updateGroundVector) : updateGroundVector(value));
-    crewShelterPositions.forEach(updateGroundVector);
-    prepBeaconA.position.y = surfaceY(-6.1, 1.1, destination) + 1.55; prepBeaconB.position.y = surfaceY(6, 1, destination) + 1.55;
-    prepLightA.position.y = prepBeaconA.position.y; prepLightB.position.y = prepBeaconB.position.y;
-    greenhouseLight.position.y = surfaceY(3.15, .45, destination) + 1.3;
-    ventGlow.position.y = surfaceY(-4.3, 2.5, destination) + 1.5;
-    recyclerLight.position.y = surfaceY(-6.15, 3.55, destination) + 1.1;
-    beaconLight.position.y = surfaceY(4.9, -1.5, destination) + 2.9;
-    roverTarget.y = surfaceY(roverTarget.x, roverTarget.z, destination);
-    shield.position.y = surfaceY(0, 0, destination) + .15; shieldGlow.position.y = surfaceY(0, 0, destination) + 2.5;
-    radiationField.position.y = surfaceY(0, 0, destination) + 1.2; radiationGlow.position.y = surfaceY(0, 0, destination) + 4.4;
-    radiationRays.position.y = surfaceY(0, 0, destination); stormGroup.position.y = surfaceY(0, 0, destination);
-    stormHaze.position.y = surfaceY(0, 0, destination) + 5;
-    fxRing.position.y = surfaceY(0, 0, destination) + .08; fxLight.position.y = surfaceY(0, 0, destination) + 2.3;
-    looseSurfaceRocks.forEach(({ mesh, x, z, size }) => { mesh.position.y = surfaceY(x, z, destination) + size * .35; });
-    horizonAnchors.forEach(({ mesh, x, z, height }) => { mesh.position.y = surfaceY(x, z, destination) + height / 2; });
-    walkPosition.y = surfaceY(walkPosition.x, walkPosition.z, destination) + 1.65;
-  }
-
   function setDestination(destination = 'moon') {
     const next = destination === 'mars' ? 'mars' : 'moon';
     if (next === activeDestination) return;
     activeDestination = next;
     clearSkyFocus();
+    terrainMaterial.map = terrainTextures[next];
+    terrainMaterial.needsUpdate = true;
     scene.background.setHex(next === 'mars' ? 0x2b120f : 0x070d19);
     scene.fog.color.setHex(next === 'mars' ? 0x5b3128 : 0x111522);
     keyLight.color.setHex(next === 'mars' ? 0xffb28b : 0xffe5c3);
@@ -596,14 +779,23 @@ export function createLunarScene(canvas) {
     terrainColors.needsUpdate = true;
     const terrainPositions = terrainGeo.attributes.position;
     for (let i = 0; i < terrainPositions.count; i++) {
-      const x = terrainBasePositions[i * 3], y = terrainBasePositions[i * 3 + 1], z = terrainBasePositions[i * 3 + 2];
-      const noise = getPlanetTerrainNoise(x, z, next);
-      terrainPositions.setXYZ(i, x + (x / terrainRadius) * noise, y + (y / terrainRadius) * noise, z + (z / terrainRadius) * noise);
+      const x = terrainBaseXZ[i * 2], z = terrainBaseXZ[i * 2 + 1];
+      terrainPositions.setY(i, surfaceY(x, z, next));
     }
-    terrainPositions.needsUpdate = true; terrainGeo.computeVertexNormals();
-    looseSurfaceRocks.forEach(({ mesh, x, z, size }) => { mesh.position.y = surfaceY(x, z, next) + size * .35; });
-    horizonAnchors.forEach(({ mesh, x, z, height }) => { mesh.position.y = surfaceY(x, z, next) + height / 2; });
+    terrainPositions.needsUpdate = true;
+    terrainGeo.computeVertexNormals();
+
+    moonCraterAnchors.forEach(({ crater, bowl, x, z }) => {
+      const ground = surfaceY(x, z, 'moon');
+      crater.position.y = ground + .10;
+      bowl.position.y = ground + .015;
+    });
+    marsDuneAnchors.forEach(({ mesh, x, z, lift }) => { mesh.position.y = surfaceY(x, z, 'mars') + lift; });
+    marsMesaAnchors.forEach(({ mesh, x, z, height }) => { mesh.position.y = surfaceY(x, z, 'mars') + height / 2; });
+    looseSurfaceRocks.forEach(({ mesh, x, z, size }) => { mesh.position.y = surfaceY(x, z, next) + size * .25; });
+    horizonAnchors.forEach(({ mesh, x, z, lift }) => { mesh.position.y = surfaceY(x, z, next) + lift; });
     syncSurfaceAnchors(next);
+
     moonCraterFeatures.visible = next !== 'mars';
     marsSurfaceFeatures.visible = next === 'mars';
     mars.visible = next !== 'mars';
@@ -611,7 +803,6 @@ export function createLunarScene(canvas) {
     deimos.visible = next === 'mars';
     dustPoints.material.color?.setHex(next === 'mars' ? 0xe19a76 : 0xffffff);
   }
-  syncSurfaceAnchors('moon');
 
   const tickForCrew = i => performance.now() * .0005 + i * 1.7;
 
@@ -640,7 +831,8 @@ export function createLunarScene(canvas) {
     radiationRayMat.opacity = state.radiation?.active ? .34 : (!state.radiation?.passed && state.radiation?.eta < 12 ? .09 : 0);
     radiationGlow.intensity = state.radiation?.active ? 1.5 : 0;
     roverTarget.set(state.roverOut ? 8.1 : 2.7, 0, state.roverOut ? -2.7 : 2.2);
-    roverTarget.y = surfaceY(roverTarget.x, roverTarget.z); headlamp.intensity = state.roverOut ? 1.8 : 0;
+    roverTarget.y = surfaceY(roverTarget.x, roverTarget.z, destination);
+    headlamp.intensity = state.roverOut ? 1.8 : 0;
     crewActors.forEach((actor, i) => {
       const sheltered = state.radiationShelter || state.storm.active || (!state.storm.passed && state.storm.eta <= 8);
       const job = state.crewAssignments?.[i] || ['engineering','water','greenhouse','research'][i];
@@ -651,7 +843,8 @@ export function createLunarScene(canvas) {
       else {
         const station = crewJobPositions[job] || actor.base;
         const offset = (i - 1.5) * .32;
-        actor.target.set(station.x + offset, surfaceY(station.x + offset, station.z + (i % 2 ? .22 : -.22)), station.z + (i % 2 ? .22 : -.22));
+        const targetX = station.x + offset, targetZ = station.z + (i % 2 ? .22 : -.22);
+        actor.target.set(targetX, surfaceY(targetX, targetZ, destination), targetZ);
       }
       actor.group.visible = true;
     });
@@ -662,6 +855,7 @@ export function createLunarScene(canvas) {
     scene.fog.color.setHex(state.storm.active ? 0x8d604e : state.storm.eta < 12 && !state.storm.passed ? 0x5d4244 : activeDestination === 'mars' ? 0x5b3128 : 0x111522);
     scene.fog.density = state.storm.active ? .022 : activeDestination === 'mars' ? .0105 : .0075; keyLight.intensity = state.storm.active ? 1.15 : (activeDestination === 'mars' ? 2.5 : 3.2);
     baseGlow.intensity = state.power < 5 ? .12 : state.storm.active ? .45 : 1.1;
+    const bodyScale = skyBodyScales[destination] || skyBodyScales.moon;
     for (const [name, group] of Object.entries(skyBodyGroups)) {
       const body = latestSky.bodies[name];
       const label = skyLabels[name];
@@ -673,17 +867,18 @@ export function createLunarScene(canvas) {
       const wasVisible = group.visible;
       group.visible = body.visible;
       if (body.visible) {
-        const target = skyWorldPosition(body.azimuth, body.altitude);
-        skyTargets[name] = target;
-        if (!wasVisible) group.position.copy(target);
-        applySkyMarkerScale(name, body, focusedSkyBody === name);
+        const trueTarget = skyWorldPosition(body.azimuth, body.altitude);
+        skyTargets[name] = trueTarget;
+        // Tracking never relocates a body to an artificial near-surface point.
+        if (!wasVisible) group.position.copy(trueTarget);
+        group.scale.setScalar((bodyScale[name] || 1) * (focusedSkyBody === name ? focusedSkyMagnification : 1));
       }
       if (label) {
         label.userData.aboveHorizon = body.visible;
         label.visible = skyLabelsVisible && body.visible;
       }
     }
-    if (focusedSkyBody && !latestSky.bodies[focusedSkyBody]?.visible) resetSkyView();
+    if (focusedSkyBody && !latestSky.bodies[focusedSkyBody]?.visible) clearSkyFocus();
   }
   function triggerEffect(kind) {
     fxKind = kind; fxTime = 1; fxColor = kind.includes('radiation') ? 0xff8e7c : kind.includes('shield') ? 0x53ddff : kind.includes('storm') ? 0xff986b :
@@ -732,19 +927,30 @@ export function createLunarScene(canvas) {
     for (const [name, target] of Object.entries(skyTargets)) {
       const body = skyBodyGroups[name];
       if (!body?.visible) continue;
+      // Celestial markers follow their real sky coordinates; only their
+      // apparent display scale changes when tracked or magnified.
       body.position.lerp(target, 1 - Math.exp(-dt * 2.4));
       const label = skyLabels[name];
       if (label) {
         label.position.copy(body.position);
-        label.position.y -= Math.max(.78, (skyMarkerRadii[name] || .12) + .55);
         const tracked = focusedSkyBody === name;
-        label.scale.set(tracked ? 4.2 : 3.8, tracked ? 1.02 : .92, 1);
+        if (tracked) {
+          const baseScale = (skyBodyScales[activeDestination]?.[name] || 1);
+          const globeRadius = (skyBodyVisualRadii[name] || .3) * baseScale * focusedSkyMagnification;
+          const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+          label.position.addScaledVector(cameraRight, globeRadius + 1.1);
+          label.position.y -= .18;
+        } else {
+          label.position.y -= skyLabelOffsets[name] || 1;
+        }
+        label.scale.set(tracked ? 1.9 : 3.8, tracked ? .48 : .92, 1);
       }
     }
-    if (sunSky && sun.visible) {
+    if (sunSky) {
       sunLight.position.copy(sun.position);
       const daylight = THREE.MathUtils.smoothstep(sunSky.altitude, -5, 18);
-      keyLight.position.copy(sun.position.clone().sub(new THREE.Vector3(0, 1.65, 0)).normalize().multiplyScalar(18));
+      sunLight.intensity = daylight * 1.4;
+      keyLight.position.copy(sun.position.clone().normalize().multiplyScalar(18));
       keyLight.intensity = (latest?.storm.active ? .65 : (destination === 'mars' ? 2.5 : 3.2)) * daylight + .12;
       rimLight.intensity = .25 + (1 - daylight) * 1.15;
       starsMaterial.opacity = THREE.MathUtils.damp(starsMaterial.opacity, THREE.MathUtils.clamp((-sunSky.altitude + 2) / 10, .08, .92), 2.2, dt);
@@ -755,8 +961,6 @@ export function createLunarScene(canvas) {
     }
 
 
-    const nextFov = THREE.MathUtils.damp(camera.fov, targetCameraFov, 6, dt);
-    if (Math.abs(nextFov - camera.fov) > .001) { camera.fov = nextFov; camera.updateProjectionMatrix(); }
     orbitState.yaw = THREE.MathUtils.damp(orbitState.yaw, orbitState.targetYaw, 6, dt);
     orbitState.pitch = THREE.MathUtils.damp(orbitState.pitch, orbitState.targetPitch, 6, dt);
     orbitState.radius = THREE.MathUtils.damp(orbitState.radius, orbitState.targetRadius, 6, dt);
@@ -773,8 +977,8 @@ export function createLunarScene(canvas) {
         walkPosition.addScaledVector(move, dt * 4.1);
         walkPosition.x = clamp(walkPosition.x, -43, 43);
         walkPosition.z = clamp(walkPosition.z, -43, 43);
+        walkPosition.y = surfaceY(walkPosition.x, walkPosition.z, activeDestination) + 1.65;
       }
-      walkPosition.y = surfaceY(walkPosition.x, walkPosition.z) + 1.65;
       camera.position.copy(walkPosition);
       const lookDirection = new THREE.Vector3(
         Math.sin(walkYaw) * Math.cos(walkPitch),
@@ -798,62 +1002,44 @@ export function createLunarScene(canvas) {
       camera.position.x = THREE.MathUtils.damp(camera.position.x, orbitTargetPos.x + wobbleX, 4.5, dt);
       camera.position.y = THREE.MathUtils.damp(camera.position.y, orbitTargetPos.y + wobbleY, 4.5, dt);
       camera.position.z = THREE.MathUtils.damp(camera.position.z, orbitTargetPos.z, 4.5, dt);
-      const look = cameraTarget.clone();
-      look.x += Math.sin(t * .14) * .035;
-
-      // Smoothly follow the selected celestial body without moving
-      // the camera away from the outpost or changing its distance.
-      const trackedGroup = focusedSkyBody ? skyBodyGroups[focusedSkyBody] : null;
-      const trackingVisible = !!trackedGroup?.visible;
-      skyTrackingBlend = THREE.MathUtils.damp(
-        skyTrackingBlend, trackingVisible ? .62 : 0, 4.5, dt
-      );
-
-      if (trackedGroup && skyTrackingBlend > .001) {
-        const baseDirection = look.clone().sub(camera.position).normalize();
-        const bodyDirection = trackedGroup.position.clone()
-          .sub(camera.position).normalize();
-        const trackingDirection = baseDirection.clone()
-          .lerp(bodyDirection, skyTrackingBlend);
-
-        if (trackingDirection.lengthSq() > 1e-6) {
-          trackingDirection.normalize();
-          const lookDistance = Math.max(camera.position.distanceTo(look), 1);
-          camera.lookAt(
-            camera.position.clone().addScaledVector(trackingDirection, lookDistance)
-          );
-        } else {
-          camera.lookAt(look);
-        }
-      } else {
-        camera.lookAt(look);
-      }
+      const look = cameraTarget.clone(); look.x += Math.sin(t * .14) * .035; camera.lookAt(look);
     }
     if (focusedSkyBody && skyBodyGroups[focusedSkyBody]?.visible) {
+      const name = focusedSkyBody;
+      const baseScale = skyBodyScales[activeDestination]?.[name] || 1;
+      const bodyRadius = (skyBodyVisualRadii[name] || .3) * baseScale * focusedSkyMagnification;
       skyTrackRing.visible = true;
-      skyTrackRing.position.copy(skyBodyGroups[focusedSkyBody].position);
+      skyTrackRing.position.copy(skyBodyGroups[name].position);
       skyTrackRing.quaternion.copy(camera.quaternion);
-      skyTrackRing.scale.setScalar((skyMarkerRadii[focusedSkyBody] || .12) * 1.55);
-    } else skyTrackRing.visible = false;
+      skyTrackRing.scale.setScalar(Math.max(.38, bodyRadius * 1.42));
+    } else {
+      skyTrackRing.visible = false;
+    }
     renderer.render(scene, camera);
   }
   function focusSkyBody(name = 'sun') {
     const body = latestSky?.bodies?.[name];
     if (!body || !body.visible || !skyTargets[name]) return false;
     focusedSkyBody = name;
-    applySkyMarkerScale(name, body, true);
+    focusedSkyMagnification = 1.35;
+    applySkyBodyScale(name);
     return true;
   }
-  function zoomSkyBody(delta) {
-    if (walkMode) setWalkMode(false);
-
-    // Zoom the complete surface and sky together; preserve camera FOV.
-    // Button input -1.5 = zoom in; +1.5 = zoom out.
-    orbitState.targetRadius = adjustSceneZoom(
-      orbitState.targetRadius, delta * .9, 14, 24
-    );
+  function zoomSkyBody(delta, name = 'sun') {
+    if (focusedSkyBody !== name && !focusSkyBody(name)) return false;
+    // Button steps are gentle; the body remains at its true sky coordinates.
+    focusedSkyMagnification = clamp(focusedSkyMagnification - delta * .3, 1.15, 3.0);
+    applySkyBodyScale(name);
     return true;
   }
+  syncSurfaceAnchors('moon');
+  scene.traverse(object => {
+    if (object.isMesh && object !== terrain) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
+  terrain.receiveShadow = true;
   animate();
   return {
     update, setRoom, setDestination, triggerEffect, setSkyLabelsVisible,
@@ -862,6 +1048,12 @@ export function createLunarScene(canvas) {
     moveWalk, isWalkMode() { return walkMode; },
     focusSkyBody, zoomSkyBody, resetSkyView,
     getSkyReport() { return latestSky; },
-    dispose() { resizeObserver.disconnect(); renderer.dispose(); Object.values(skyLabels).forEach(label => { label.material.map?.dispose(); label.material.dispose(); }); }
+    dispose() {
+      resizeObserver.disconnect();
+      renderer.dispose();
+      planetTextures.forEach(texture => texture.dispose());
+      Object.values(terrainTextures).forEach(texture => texture.dispose());
+      Object.values(skyLabels).forEach(label => { label.material.map?.dispose(); label.material.dispose(); });
+    }
   };
 }

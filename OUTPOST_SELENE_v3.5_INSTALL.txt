@@ -1,0 +1,21 @@
+OUTPOST SELENE v3.5 — INSTALL / REPLACE
+
+1. Put Outpost_Selene_v3.5_FINAL_SOURCE.zip in ~/Downloads.
+2. Open Terminal and run:
+
+   cd ~/Downloads
+   unzip -o Outpost_Selene_v3.5_FINAL_SOURCE.zip
+   cd Outpost_Selene
+   npm ci
+   npm run build
+   npm run dev
+
+3. Open the local URL printed by Vite (usually http://localhost:5173/Outpost_Selene/).
+
+This archive excludes .git, node_modules and dist. Unzipping over the existing folder preserves your existing .git repository while replacing the project source files.
+
+After you visually verify the local build, publish with:
+
+   git add -A
+   git commit -m "Outpost Selene v3.5 final planetary scene correction"
+   git push origin main

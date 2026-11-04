@@ -1,4 +1,4 @@
-OUTPOST SELENE v3.3
+OUTPOST SELENE v3.5
 
 Rebuild focus: interactive onboarding, three meaningful difficulty profiles, Moon/Mars-specific solar, dust and mission-clock models, resource balancing, NASA science provenance, and repeatable mission simulations.
 
@@ -57,3 +57,14 @@ OUTPOST SELENE v3.4
 - Zoom changes the complete scene camera/FOV and preserves the surface context.
 - Apparent-size planet markers, physical distance readouts, procedural planet globes.
 - Automated tests: see tests/scene-math.test.js and tests/ui-layout.test.js.
+
+
+v3.5 final planetary scene correction:
+- Removed the artificial low-sky relocation of tracked planets. Selected bodies stay at their calculated azimuth/altitude; the camera remains fixed on the outpost.
+- Track Body now applies a modest 1.35× highlight and a camera-facing tracking ring. Telescope zoom steps are gradual and capped at 3×.
+- Mouse-wheel camera zoom is limited to 14–22 world units around the original 18-unit outpost framing.
+- Rebuilt the local terrain curvature radius to 280 world units and the circular surface cap to 156 units, making the horizon curvature visible from the default camera.
+- Added UV-mapped procedural Moon/Mars regolith textures, lunar impact-pit texture detail, Martian wind streaks, 280 instanced pebbles, and directional shadows.
+- Re-anchored all surface structures, solar arrays, rover, crew, shelter/effect objects, job positions, and walking camera height to the curved terrain.
+- Validation: node --check passed for scene.js, scene-math.js, main.js and game.js; npm test 36/36 passed; npm run test:sim 54/54 passed.
+- Production Vite build not verified: dependency installation could not reach the npm registry in the authoring environment. Run npm ci and npm run build locally before publishing.

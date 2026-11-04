@@ -1,4 +1,4 @@
-# OUTPOST SELENE v3.3 — Junior Astronaut Mission Trainer
+# OUTPOST SELENE v3.5 — Junior Astronaut Mission Trainer
 
 An educational, fixed-viewport outpost-management game built with Vite, JavaScript and Three.js. Players operate a four-person outpost on the Moon or Mars, balance power and life support, grow food, assign crew, respond to surface hazards and complete a mission.
 
@@ -14,6 +14,17 @@ npm run dev
 ```
 
 For production: `npm run build` and `npm run preview`.
+
+
+## v3.5 planetary scene update
+
+- Track Body keeps each selected planet at its calculated sky azimuth and altitude; it no longer relocates a planet to a low artificial point near the Moon/Mars surface.
+- Track Body highlights the selected globe. Zoom controls magnify that globe gradually (1.35× starting selection, capped at 3×) without moving the surface camera.
+- Mouse-wheel surface zoom is deliberately limited to a small orbit-radius range so the outpost remains the visual anchor.
+- Moon and Mars use a circular, curved terrain cap with a locally exaggerated horizon that is visible at gameplay scale.
+- Surface UV textures add regolith grain, lunar impact pits and Martian wind-etched streaks; instanced pebbles add detail without hundreds of extra draw calls.
+- Habitat, lab, greenhouse, solar arrays, rover, crew, equipment, effects and walking height are re-anchored to the curved ground on both destinations.
+- A single directional shadow map adds contact and equipment shadows. Existing outpost layout, room controls, HUD and mission logic are retained.
 
 ## Choose a mission
 

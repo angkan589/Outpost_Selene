@@ -5,20 +5,22 @@ import {
   PLANET_SURFACE_RADIUS,
   getPlanetSurfaceHeight,
   getSkyDistanceKm,
+  getSunAngularRadiusDeg,
   formatSkyDistance,
-  getSkyMarkerRadius,
-  adjustSceneZoom
+  getSkyMarkerRadius
 } from '../src/scene-math.js';
 
 test('Moon and Mars terrain follow a curved spherical surface rather than a flat square plane', () => {
   for (const destination of ['moon', 'mars']) {
     const centre = getPlanetSurfaceHeight(0, 0, destination);
-    const nearEdge = getPlanetSurfaceHeight(100, 0, destination);
-    const farther = getPlanetSurfaceHeight(180, 0, destination);
-    assert.ok(nearEdge < centre - .5, `${destination} terrain should curve down from the centre`);
-    assert.ok(farther < nearEdge, `${destination} terrain should continue curving toward the horizon`);
+    const visibleHorizon = getPlanetSurfaceHeight(45, 0, destination);
+    const beyondHorizon = getPlanetSurfaceHeight(65, 0, destination);
+    const farther = getPlanetSurfaceHeight(100, 0, destination);
+    assert.ok(visibleHorizon < centre - 3, `${destination} curvature must be visible at gameplay scale`);
+    assert.ok(beyondHorizon < visibleHorizon - 3, `${destination} horizon should visibly roll away`);
+    assert.ok(farther < beyondHorizon, `${destination} terrain should continue curving beyond the visible horizon`);
   }
-  assert.ok(PLANET_SURFACE_RADIUS > 1000);
+  assert.ok(PLANET_SURFACE_RADIUS > 200 && PLANET_SURFACE_RADIUS < 400);
 });
 
 test('physical distances are reported in kilometres and astronomical units', () => {
@@ -41,9 +43,11 @@ test('Earth appears much larger from the Moon than it does from Mars', () => {
   assert.ok(earthFromMoon > earthFromMars * 5);
 });
 
-test('zoom changes the complete scene camera and stays inside safe surface-view limits', () => {
-  assert.equal(adjustSceneZoom(18, -1.5), 16.5);
-  assert.equal(adjustSceneZoom(12, -1.5), 12);
-  assert.equal(adjustSceneZoom(30, 1.5), 30);
-  assert.equal(adjustSceneZoom(16.5, 1.5), 18);
+
+test('the Sun apparent disk is correctly sized from lunar and Martian distances', () => {
+  const moonSunRadius = getSunAngularRadiusDeg({ distanceAu: 1 });
+  const marsSunRadius = getSunAngularRadiusDeg({ distanceAu: 1.52 });
+  assert.ok(moonSunRadius > .25 && moonSunRadius < .28);
+  assert.ok(marsSunRadius > .16 && marsSunRadius < .19);
+  assert.ok(moonSunRadius > marsSunRadius);
 });

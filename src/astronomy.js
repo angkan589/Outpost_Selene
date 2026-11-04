@@ -1,3 +1,5 @@
+import { getSunAngularRadiusDeg } from './scene-math.js';
+
 // Educational sky positions using JPL's 1800–2050 approximate Keplerian elements
 // and IAU body-orientation models. This is not a substitute for JPL Horizons.
 const DEG = Math.PI / 180;
@@ -165,7 +167,13 @@ function rawSky(destination, dateMs, rotationOffsetDeg = 0) {
 export function getCelestialPositions(destination = 'moon', dateMs = Date.now(), rotationOffsetDeg = 0) {
   const bodies = rawSky(destination === 'mars' ? 'mars' : 'moon', dateMs, rotationOffsetDeg);
   for (const [name, body] of Object.entries(bodies)) {
-    body.visible = body.altitude > 0.25;
+    if (name === 'sun') {
+      body.angularRadiusDeg = getSunAngularRadiusDeg(body);
+      // The Sun is visible as soon as any part of its disk clears the horizon.
+      body.visible = body.altitude + body.angularRadiusDeg > 0;
+    } else {
+      body.visible = body.altitude > 0.25;
+    }
     body.azimuth = mod(body.azimuth, 360);
   }
   return bodies;

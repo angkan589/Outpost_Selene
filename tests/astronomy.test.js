@@ -60,3 +60,13 @@ test('Phobos and Deimos move at different rates as mission time advances', () =>
   assert.ok(phobosShift > 10, 'Phobos should move noticeably in two hours');
   assert.ok(deimosShift > 1, 'Deimos should also move, but more slowly');
 });
+
+test('the Sun remains visible when its upper limb clears the horizon at mission dawn', () => {
+  for (const destination of ['moon', 'mars']) {
+    const offset = getSkyRotationOffset(destination, missionStart);
+    const sun = getCelestialPositions(destination, missionStart, offset).sun;
+    assert.ok(sun.angularRadiusDeg > 0, `${destination} Sun should expose its apparent angular radius`);
+    assert.equal(sun.visible, sun.altitude + sun.angularRadiusDeg > 0);
+    assert.ok(sun.visible, `${destination} Sun's disk should be visible at the mission dawn`);
+  }
+});

@@ -7,15 +7,46 @@ const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 const scene = readFileSync(new URL('../src/scene.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
 
-test('sky controls provide tracking zoom and a reset camera action', () => {
+test('tracking and zoom magnify a celestial body without flying away from the planetary surface', () => {
   for (const id of ['sky-center-button', 'sky-zoom-in', 'sky-zoom-out', 'sky-reset-view']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  assert.match(scene, /function zoomSkyBody\(/);
+
+  assert.match(main, /\$\('#sky-center-button'\)\?\.addEventListener/);
+  assert.match(main, /scene\.focusSkyBody\(name\)/);
+  assert.match(main, /scene\.zoomSkyBody\(-1\.5,name\)/);
+  assert.match(main, /scene\.zoomSkyBody\(1\.5,name\)/);
+  assert.match(main, /scene\.resetSkyView\(\)/);
+  assert.match(main, /SUN LIMB VISIBLE/);
+
   const focusBlock = scene.match(/function focusSkyBody\([\s\S]*?function zoomSkyBody\(/)?.[0] || '';
-  assert.match(focusBlock, /applySkyMarkerScale/);
-  assert.doesNotMatch(focusBlock, /cameraTarget\.(?:copy|lerp)/, 'tracking must not jump the camera away from the outpost surface');
-  assert.match(scene, /adjustSceneZoom\(orbitState\.targetRadius/);
+  assert.match(focusBlock, /focusedSkyMagnification = 1\.35/);
+  assert.match(focusBlock, /applySkyBodyScale\(name\)/);
+  assert.doesNotMatch(focusBlock, /focusedSkyVisualTarget|skyWorldPosition\(body\.azimuth,\s*-2,\s*48\)/);
+  assert.doesNotMatch(focusBlock, /cameraTarget\.(?:copy|lerp)|orbitState\.targetYaw/);
+  assert.match(scene, /focusedSkyMagnification = clamp\(focusedSkyMagnification - delta \* \.3, 1\.15, 3\.0\)/);
+  assert.match(scene, /orbitState\.targetRadius = clamp\(orbitState\.targetRadius \+ e\.deltaY \* \.0075, 14, 22\)/);
+  assert.match(scene, /skyTrackRing/);
+  assert.match(scene, /function resetSkyView\(/);
+  assert.match(scene, /function clearSkyFocus\(/);
+  assert.match(scene, /body\.position\.lerp\(target/);
+});
+
+test('Moon and Mars use a curved circular terrain mesh with surface-anchored features', () => {
+  assert.match(scene, /terrainRadius = 156, terrainRings = 104, terrainSegments = 288/);
+  assert.match(scene, /new THREE\.BufferGeometry\(\)/);
+  assert.match(scene, /getPlanetSurfaceHeight\(x, z, 'moon'\)/);
+  assert.match(scene, /terrainGeo\.setIndex\(terrainIndices\)/);
+  assert.match(scene, /terrainGeo\.setAttribute\('uv'/);
+  assert.match(scene, /makeTerrainTexture\(destination\)/);
+  assert.match(scene, /terrainMaterial\.map = terrainTextures\[next\]/);
+  assert.match(scene, /moonCraterAnchors/);
+  assert.match(scene, /marsDuneAnchors/);
+  assert.match(scene, /horizonAnchors/);
+  assert.match(scene, /pebbleCount = 280/);
+  assert.match(scene, /syncSurfaceAnchors\(next\)/);
+  assert.match(scene, /renderer\.shadowMap\.enabled = true/);
+  assert.doesNotMatch(scene, /const terrainGeo = new THREE\.PlaneGeometry\(100, 100/);
 });
 
 test('sunrise and sunset have their own readout, separate from horizon visibility', () => {
